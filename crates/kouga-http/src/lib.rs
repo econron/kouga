@@ -16,7 +16,9 @@ pub use middleware::{
     ClientIp, HttpOptions, HttpRequest, IntoMiddleware, Middleware, Next, bearer_auth,
 };
 mod endpoint;
+mod multipart;
 pub use endpoint::{ApiInput, ApiOutput, Endpoint, Operation, Parameter, ResponseMeta};
+pub use multipart::Multipart;
 pub mod router;
 pub use router::{Group, Router};
 

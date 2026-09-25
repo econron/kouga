@@ -3,6 +3,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = std::env::var("KOUGA_BIND").unwrap_or_else(|_| "127.0.0.1:3000".to_owned());
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("Kouga HTTP listening on {}", listener.local_addr()?);
-    axum::serve(listener, APP_CRATE::router().with_state(())).await?;
+    let docs = matches!(std::env::var("KOUGA_ENV").as_deref(), Err(std::env::VarError::NotPresent) | Ok("development" | "test"));
+    if docs {
+        println!("Docs       http://{address}/docs");
+        println!("OpenAPI    http://{address}/openapi.yml");
+    }
+    let app = kouga_openapi::serve(APP_CRATE::router(), (), "APP_CRATE", "0.1.0", docs)?;
+    axum::serve(listener, app).await?;
     Ok(())
 }

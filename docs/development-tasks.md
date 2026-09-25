@@ -387,10 +387,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T14 — OpenAPI生成と開発用Docs
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: subagent
 - ブランチ: `task/T14-openapi`
-- worktree: `.worktrees/T14-openapi`（作成前）
+- worktree: `.worktrees/T14-openapi`
 - 依存: T08、T09、T10
 - 対応仕様: 4.18
 - 主担当領域: OpenAPI生成・開発Docs
@@ -399,12 +399,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 型・検証・認証・エラー・multipart・本文なし応答が仕様に一致し、未解決参照や重複operation IDを拒否する。
-- [ ] 外部サービスなしの決定的生成、差分check、失敗時の元ファイル保持、本番での標準非公開を検証する。
+- [x] 型・検証・認証・エラー・multipart・本文なし応答が仕様に一致し、未解決参照や重複operation IDを拒否する。
+- [x] 外部サービスなしの決定的生成、差分check、失敗時の元ファイル保持、本番での標準非公開を検証する。
 
 **今回含めないこと**: gRPCからOpenAPIへの自動変換、独自UIの開発。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-openapi::generate`は登録済み`Operation`からOpenAPI 3.1.1をYAML 1.2互換JSONとして出力し、`serve`は明示有効時だけvendored Swagger UIと仕様を公開する。`kouga openapi generate|check [--output]`と開発`server`自動更新を追加。応答のdata/meta、201 Location、204、標準エラー、path/query、Bearerを反映する。`Multipart<T>`でaxumのストリーミングfieldを受け、同じ`T`からmultipart schemaを生成。実HTTPでファイルfieldのchunk読取・200本文・media type不一致の415を確認。生成アプリで連続生成・差分check・生成コンパイル失敗時の元ファイル保持を確認。固定した公式OpenAPI 3.1 schema、OpenAPI型のparse、未解決参照、重複ID、Docsの公開切替とvendored asset、RequestのPATCH省略/nullと長さ制約、実HTTPの422/200と200本文schema一致をテスト。Rust 1.94のfmt、workspace clippy、権限付きworkspaceテストは通過（sandbox内のSMTPソケット試験は権限制約で失敗）。multipartのfield値検証・個別上限・保存はT24へ。
 
 ### T15 — CLI基盤と新規アプリ生成
 
