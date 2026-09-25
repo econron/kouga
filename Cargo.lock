@@ -899,11 +899,22 @@ dependencies = [
  "axum",
  "http",
  "kouga-core",
+ "kouga-http-derive",
  "kouga-validation",
+ "schemars",
  "serde",
  "serde_json",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "kouga-http-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]

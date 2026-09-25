@@ -1,14 +1,13 @@
-use crate::Error;
-use axum::handler::Handler;
+use crate::{Endpoint, Error, Operation};
 use axum::response::IntoResponse;
-use axum::routing::{MethodRouter, delete, get, patch, post, put};
+use axum::routing::MethodRouter;
 use http::{Method, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
 use std::collections::BTreeMap;
 
 /// Register routes without constructing application state.
 pub struct Router<S> {
-    routes: BTreeMap<String, (MethodRouter<S>, Vec<Method>)>,
+    routes: BTreeMap<String, (MethodRouter<S>, Vec<Operation>)>,
 }
 
 impl<S> Default for Router<S> {
@@ -27,7 +26,7 @@ where
         Self::default()
     }
 
-    fn add(mut self, path: &str, method: Method, route: MethodRouter<S>) -> Result<Self, Error> {
+    fn add(mut self, path: &str, method: Method, endpoint: Endpoint<S>) -> Result<Self, Error> {
         if !path.starts_with('/') {
             return Err(Error(CoreError::new(
                 ErrorKind::Internal,
@@ -58,11 +57,26 @@ where
                 "Ambiguous route",
             )));
         }
+        if endpoint.operation.operation_id.is_empty()
+            || endpoint.operation.responses.is_empty()
+            || self
+                .routes
+                .values()
+                .flat_map(|(_, operations)| operations)
+                .any(|operation| operation.operation_id == endpoint.operation.operation_id)
+        {
+            return Err(Error(CoreError::new(
+                ErrorKind::Internal,
+                "route_conflict",
+                "Duplicate or missing operation ID",
+            )));
+        }
+        let (route, operation) = endpoint.into_route(method.clone());
         let entry = self
             .routes
             .entry(path.to_owned())
             .or_insert_with(|| (MethodRouter::new(), Vec::new()));
-        if entry.1.contains(&method) {
+        if entry.1.iter().any(|operation| operation.method == method) {
             return Err(Error(CoreError::new(
                 ErrorKind::Internal,
                 "route_conflict",
@@ -70,63 +84,44 @@ where
             )));
         }
         entry.0 = entry.0.clone().merge(route);
-        entry.1.push(method);
+        entry.1.push(operation.at(method, path));
         Ok(self)
     }
 
-    pub fn get<H, T>(self, path: &str, handler: H) -> Result<Self, Error>
-    where
-        H: Handler<T, S>,
-        T: 'static,
-    {
-        self.add(path, Method::GET, get(handler))
+    pub fn get(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::GET, endpoint)
     }
-    pub fn post<H, T>(self, path: &str, handler: H) -> Result<Self, Error>
-    where
-        H: Handler<T, S>,
-        T: 'static,
-    {
-        self.add(path, Method::POST, post(handler))
+    pub fn post(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::POST, endpoint)
     }
-    pub fn put<H, T>(self, path: &str, handler: H) -> Result<Self, Error>
-    where
-        H: Handler<T, S>,
-        T: 'static,
-    {
-        self.add(path, Method::PUT, put(handler))
+    pub fn put(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::PUT, endpoint)
     }
-    pub fn patch<H, T>(self, path: &str, handler: H) -> Result<Self, Error>
-    where
-        H: Handler<T, S>,
-        T: 'static,
-    {
-        self.add(path, Method::PATCH, patch(handler))
+    pub fn patch(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::PATCH, endpoint)
     }
-    pub fn delete<H, T>(self, path: &str, handler: H) -> Result<Self, Error>
-    where
-        H: Handler<T, S>,
-        T: 'static,
-    {
-        self.add(path, Method::DELETE, delete(handler))
+    pub fn delete(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::DELETE, endpoint)
     }
 
-    pub fn routes(&self) -> Vec<(Method, &str)> {
+    pub fn routes(&self) -> Vec<&Operation> {
         self.routes
             .iter()
-            .flat_map(|(path, (_, methods))| {
-                methods
-                    .iter()
-                    .cloned()
-                    .map(move |method| (method, path.as_str()))
-            })
+            .flat_map(|(_, (_, operations))| operations.iter())
             .collect()
     }
 
     pub fn with_state(self, state: S) -> axum::Router {
         let mut router = axum::Router::new();
-        for (path, (route, methods)) in self.routes {
-            let mut allowed: Vec<&str> = methods.iter().map(Method::as_str).collect();
-            if methods.contains(&Method::GET) {
+        for (path, (route, operations)) in self.routes {
+            let mut allowed: Vec<&str> = operations
+                .iter()
+                .map(|operation| operation.method.as_str())
+                .collect();
+            if operations
+                .iter()
+                .any(|operation| operation.method == Method::GET)
+            {
                 allowed.push("HEAD");
             }
             allowed.push("OPTIONS");

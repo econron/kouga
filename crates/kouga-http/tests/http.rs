@@ -1,7 +1,10 @@
 use axum::body::{Body, to_bytes};
 use http::{Method, Request as HttpRequest, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
-use kouga_http::{Created, Error, Json, NoContent, Page, Path, Router, Validated};
+use kouga_http::{
+    Created, Endpoint, Error, Json, NoContent, Operation, Page, Path, Query, Router, Validated,
+    endpoint,
+};
 use kouga_validation::Request;
 use kouga_validation::axum::ContextFromRequest;
 use std::sync::{
@@ -37,6 +40,21 @@ struct AuthInput {
     title: String,
 }
 
+#[endpoint(operation_id = "tasks.create", summary = "Create a task")]
+async fn create_task(input: Validated<Input>) -> Result<Created<String>, Error> {
+    Ok(Created::new("/tasks/1", input.title.clone()))
+}
+
+#[derive(Request)]
+struct Search {
+    page: usize,
+}
+
+#[endpoint(operation_id = "tasks.search")]
+async fn search_task(Path(id): Path<String>, Query(query): Query<Search>) -> Json<String> {
+    Json(format!("{id}:{}", query.page))
+}
+
 async fn body(response: axum::response::Response) -> serde_json::Value {
     let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
@@ -47,14 +65,35 @@ async fn routes_and_responses() {
     let router = Router::<()>::new()
         .get(
             "/tasks/{id}",
-            |Path(id): Path<String>| async move { Json(id) },
+            Endpoint::handler(
+                |Path(id): Path<String>| async move { Json(id) },
+                Operation::new("tasks.show").response::<Json<String>>(),
+            ),
         )
         .unwrap()
-        .get("/tasks/new", || async { Json("static") })
+        .get(
+            "/tasks/new",
+            Endpoint::handler(
+                || async { Json("static") },
+                Operation::new("tasks.new").response::<Json<&str>>(),
+            ),
+        )
         .unwrap()
-        .post("/tasks", || async { Created::new("/tasks/1", "created") })
+        .post(
+            "/tasks",
+            Endpoint::handler(
+                || async { Created::new("/tasks/1", "created") },
+                Operation::new("tasks.create_raw").response::<Created<&str>>(),
+            ),
+        )
         .unwrap()
-        .delete("/tasks/{id}", || async { NoContent })
+        .delete(
+            "/tasks/{id}",
+            Endpoint::handler(
+                || async { NoContent },
+                Operation::new("tasks.delete").response::<NoContent>(),
+            ),
+        )
         .unwrap();
     assert_eq!(router.routes().len(), 4);
     let app = router.with_state(());
@@ -170,9 +209,21 @@ async fn routes_and_responses() {
     );
     assert!(
         Router::<()>::new()
-            .get("/a/{id}", || async { NoContent })
+            .get(
+                "/a/{id}",
+                Endpoint::handler(
+                    || async { NoContent },
+                    Operation::new("a.show").response::<NoContent>()
+                )
+            )
             .unwrap()
-            .get("/a/{name}", || async { NoContent })
+            .get(
+                "/a/{name}",
+                Endpoint::handler(
+                    || async { NoContent },
+                    Operation::new("a.other").response::<NoContent>()
+                )
+            )
             .is_err()
     );
 }
@@ -182,13 +233,21 @@ async fn validation_precedes_controller_and_errors_are_safe() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     let app = Router::<()>::new()
-        .post("/tasks", move |input: Validated<Input>| {
-            let counter = counter.clone();
-            async move {
-                counter.fetch_add(1, Ordering::SeqCst);
-                Json(input.title.clone())
-            }
-        })
+        .post(
+            "/tasks",
+            Endpoint::handler(
+                move |input: Validated<Input>| {
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        Json(input.title.clone())
+                    }
+                },
+                Operation::new("tasks.validate")
+                    .json_input::<Input>()
+                    .response::<Json<String>>(),
+            ),
+        )
         .unwrap()
         .with_state(());
     for (payload, expected) in [
@@ -277,9 +336,15 @@ async fn validation_precedes_controller_and_errors_are_safe() {
 #[tokio::test]
 async fn context_is_checked_before_json_decode() {
     let app = Router::<()>::new()
-        .post("/private", |input: Validated<AuthInput>| async move {
-            Json(input.title.clone())
-        })
+        .post(
+            "/private",
+            Endpoint::handler(
+                |input: Validated<AuthInput>| async move { Json(input.title.clone()) },
+                Operation::new("tasks.private")
+                    .json_input::<AuthInput>()
+                    .response::<Json<String>>(),
+            ),
+        )
         .unwrap()
         .with_state(());
     let request = HttpRequest::builder()
@@ -290,4 +355,65 @@ async fn context_is_checked_before_json_decode() {
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn endpoint_metadata_matches_registered_handler() {
+    assert!(
+        Router::<()>::new()
+            .post("/tasks", create_task_endpoint())
+            .unwrap()
+            .post("/other", create_task_endpoint())
+            .is_err()
+    );
+    let router = Router::<()>::new()
+        .post("/tasks", create_task_endpoint())
+        .unwrap()
+        .get("/tasks/{id}", search_task_endpoint())
+        .unwrap();
+    let operation = router
+        .routes()
+        .into_iter()
+        .find(|op| op.operation_id == "tasks.create")
+        .unwrap();
+    assert_eq!(operation.operation_id, "tasks.create");
+    assert_eq!(operation.method, Method::POST);
+    assert_eq!(operation.path, "/tasks");
+    assert_eq!(operation.summary, Some("Create a task"));
+    assert_eq!(operation.responses[0].status, 201);
+    assert!(operation.request_body.is_some());
+    assert!(operation.responses[0].data_schema.is_some());
+    let search = router
+        .routes()
+        .into_iter()
+        .find(|op| op.operation_id == "tasks.search")
+        .unwrap();
+    assert_eq!(search.parameters[0].name, "id");
+    assert!(search.path_schema.is_some());
+    assert!(search.query_schema.is_some());
+    let app = router.with_state(());
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method(Method::POST)
+                .uri("/tasks")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"title":"ok"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(body(response).await["data"], "ok");
+    let response = app
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/tasks/42?page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body(response).await["data"], "42:2");
 }
