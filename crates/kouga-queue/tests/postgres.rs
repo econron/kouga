@@ -25,9 +25,19 @@ async fn enqueue_reads_back_and_respects_transaction() {
     if !schema_exists {
         sqlx::raw_sql(SCHEMA_SQL).execute(&db).await.unwrap();
     }
+    sqlx::query("CREATE TABLE IF NOT EXISTS kouga_t20_business (id bigint PRIMARY KEY)")
+        .execute(&db)
+        .await
+        .unwrap();
+    let business_id = Utc::now().timestamp_micros();
 
     let at = Utc::now() + ChronoDuration::hours(1);
     let mut tx = db.begin().await.unwrap();
+    sqlx::query("INSERT INTO kouga_t20_business (id) VALUES ($1)")
+        .bind(business_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     let id = Welcome { user_id: 7 }
         .enqueue_with(
             &mut tx,
@@ -63,12 +73,42 @@ async fn enqueue_reads_back_and_respects_transaction() {
         .unwrap();
     assert_eq!(outside, 0);
     tx.rollback().await.unwrap();
+    let business_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM kouga_t20_business WHERE id = $1")
+            .bind(business_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(business_count, 0);
     let outside: i64 = sqlx::query_scalar("SELECT count(*) FROM kouga_jobs WHERE id = $1")
         .bind(id)
         .fetch_one(&db)
         .await
         .unwrap();
     assert_eq!(outside, 0);
+
+    let mut tx = db.begin().await.unwrap();
+    sqlx::query("INSERT INTO kouga_t20_business (id) VALUES ($1)")
+        .bind(business_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let committed_id = Welcome { user_id: 9 }.enqueue(&mut tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let business_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM kouga_t20_business WHERE id = $1")
+            .bind(business_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(business_count, 1);
+    let payload: serde_json::Value =
+        sqlx::query_scalar("SELECT payload FROM kouga_jobs WHERE id = $1")
+            .bind(committed_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(payload["user_id"], 9);
 
     let id = Welcome { user_id: 8 }.enqueue_at(&db, at).await.unwrap();
     let (status, attempt): (String, i32) =
@@ -80,6 +120,16 @@ async fn enqueue_reads_back_and_respects_transaction() {
     assert_eq!((status.as_str(), attempt), ("pending", 0));
     sqlx::query("DELETE FROM kouga_jobs WHERE id = $1")
         .bind(id)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM kouga_jobs WHERE id = $1")
+        .bind(committed_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM kouga_t20_business WHERE id = $1")
+        .bind(business_id)
         .execute(&db)
         .await
         .unwrap();
