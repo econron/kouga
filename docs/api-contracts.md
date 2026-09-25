@@ -245,6 +245,8 @@ SQLxの接続・raw_sqlを使い、履歴とdirty/repairはKougaが管理する�
 
 公開入口は`MigrationSet::load(path) -> Result<MigrationSet, MigrationError>`と、`Migrator::new(db, set, options)`の`status/migrate/rollback(steps)/repair(version, state, reason)`（各async）。MigrationErrorはInvalidFile/HistoryMismatch/OutOfOrder/LockTimeout/Irreversible/Dirty/Databaseを区別する。
 
+**T05時点の実装済みAPI**: `MigrationSet::load(path)`、`Migrator::new(db: kouga_db::Db, set, MigratorOptions)`、`status().await -> Result<Vec<MigrationStatus>, MigrationError>`、`migrate().await -> Result<usize, MigrationError>`。`MigratorOptions`は`lock_timeout`と`statement_timeout`を持つ。`migrate`は通常のtransactional SQLだけを適用し、非transactional指定は適用前に拒否する。`rollback`・`repair`・SQLひな形の生成・`kouga db ...` CLIは未実装で、T06以降の対象。通常サーバーから自動実行しない。
+
 versionは14桁UTC、up必須。downが欠落・空白/コメントだけなら不可逆。checksumはファイルの生bytesのSHA-256（改行も対象）、up/down各別に保持する。migration履歴tableは`_kouga_migrations`、repair履歴は`_kouga_migration_repairs`。version/name/checksums/mode/state/direction/applied_atと修復理由を保存する。dirtyの方向を残し、rollback中断も識別する。
 
 検査→専用接続のsession advisory lock→履歴再検査→実行の順。同一DB用の固定lock keyをmigrate/rollback/reset/repairで共有する。通常は各migrationのDDLと履歴を同一txで確定。非txはdirty永続化→SQL→履歴確定で、失敗時はdirtyを保持する。非txファイルはトップレベル一文を契約とする。複数文のsimple queryには暗黙transactionが生じ得るため、CONCURRENTLYなどは一文ずつ別migrationへ分ける。単純分割で回避しない。
