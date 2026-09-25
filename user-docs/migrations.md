@@ -4,6 +4,8 @@
 
 > ドキュメント・プレビュー。SQLを標準にする案と、CLIの利用体験を示しています。Kougaのコマンドは未実装です。
 
+現在の管理APIは`kouga-migration`から利用できます。CLIへの接続は開発中です。SQLひな形生成APIはupのみを作り、可逆な場合のdownは手動で追加します。schema出力にはシステムの`pg_dump`が必要です（PostgreSQL 17に対する`pg_dump` 18.3で検証）。
+
 migrationには、DBへ何を変更するかを書きます。Kougaは適用順と履歴を管理し、PostgreSQLのSQLを実行します。
 
 ## 生成されたSQLを読む

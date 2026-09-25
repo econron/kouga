@@ -1,5 +1,11 @@
 //! SQL migrations. Application servers never run these implicitly.
 
+mod admin;
+pub use admin::{
+    AdminTarget, Environment, create_database, dump_schema, generate_migration, reset_database,
+    run_seed,
+};
+
 use std::{collections::BTreeMap, fmt, fs, path::Path, time::Duration};
 
 use kouga_db::{Acquire, Db, DbError};
@@ -125,7 +131,7 @@ impl MigrationSet {
                 up.ok_or_else(|| MigrationError::InvalidFile(format!("missing up for {version}")))?;
             let up_sql = String::from_utf8(up.clone())
                 .map_err(|_| MigrationError::InvalidFile(format!("non-UTF-8 up for {version}")))?;
-            if up_sql.trim().is_empty() {
+            if !has_sql(&up_sql) {
                 return Err(MigrationError::InvalidFile(format!(
                     "empty up for {version}"
                 )));
@@ -168,6 +174,53 @@ impl MigrationSet {
 
 fn checksum(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn has_sql(sql: &str) -> bool {
+    let bytes = sql.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_whitespace() || bytes[index] == b';' {
+            index += 1;
+            continue;
+        }
+        if bytes[index..].starts_with(b"--") {
+            index = bytes[index..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(bytes.len(), |offset| index + offset + 1);
+            continue;
+        }
+        if bytes[index..].starts_with(b"/*") {
+            index += 2;
+            let mut depth = 1;
+            while index < bytes.len() && depth > 0 {
+                if bytes[index..].starts_with(b"/*") {
+                    depth += 1;
+                    index += 2;
+                } else if bytes[index..].starts_with(b"*/") {
+                    depth -= 1;
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+            }
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(test)]
+mod sql_file_tests {
+    use super::has_sql;
+
+    #[test]
+    fn comments_do_not_make_a_migration_executable() {
+        assert!(!has_sql("-- TODO\n/* nested /* comment */ only */ ;"));
+        assert!(has_sql("/* note */ CREATE TABLE items(id int);"));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -489,7 +542,7 @@ async fn rollback_locked(
             .collect();
         for migration in &targets {
             let down = migration.down.as_deref().unwrap_or("");
-            if down.lines().all(|line| line.trim().is_empty() || line.trim_start().starts_with("--")) {
+            if !has_sql(down) {
                 return Err(MigrationError::Irreversible(migration.version.clone()));
             }
         }
