@@ -1,9 +1,54 @@
-//! Requestの検証契約。ルール実行とderiveはT07・T08で追加する。
+//! 通信方式に依存しないRequest検証。deriveは別crateで追加する。
 
 use std::future::Future;
 use std::ops::Deref;
 
-use kouga_core::Error;
+use kouga_core::{Error, ErrorDetail, ErrorKind};
+
+pub const MAX_ERRORS: usize = 100;
+
+/// 組み込みルールの実行時表現。T08のderiveは同じ値をschemaにも使う。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rule<T = ()> {
+    Length {
+        min: Option<usize>,
+        max: Option<usize>,
+    },
+    Range {
+        min: Option<T>,
+        max: Option<T>,
+    },
+    Email,
+}
+
+impl<T> Rule<T> {
+    /// 文字列は`value.chars().count()`、配列は`value.len()`を渡す。
+    pub fn check_length(self, length: usize) -> bool {
+        match self {
+            Self::Length { min, max } => {
+                min.is_none_or(|min| length >= min) && max.is_none_or(|max| length <= max)
+            }
+            _ => false,
+        }
+    }
+
+    pub fn check_range(&self, value: &T) -> bool
+    where
+        T: PartialOrd,
+    {
+        match self {
+            Self::Range { min, max } => {
+                min.as_ref().is_none_or(|min| value >= min)
+                    && max.as_ref().is_none_or(|max| value <= max)
+            }
+            _ => false,
+        }
+    }
+
+    pub fn check_email(self, value: &str) -> bool {
+        matches!(self, Self::Email) && email_address::EmailAddress::is_valid(value)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
@@ -11,9 +56,67 @@ pub struct ValidationError {
     pub code: String,
 }
 
+impl ValidationError {
+    pub fn new(code: impl Into<String>) -> Self {
+        Self {
+            field: String::new(),
+            code: code.into(),
+        }
+    }
+
+    pub fn at(mut self, field: impl Into<String>) -> Self {
+        self.field = field.into();
+        self
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ValidationErrors {
-    pub errors: Vec<ValidationError>,
+    errors: Vec<ValidationError>,
+}
+
+impl ValidationErrors {
+    /// 上限到達時はfalseを返し、以後のエラーは保存しない。
+    pub fn push(&mut self, error: ValidationError) -> bool {
+        if self.is_full() {
+            return false;
+        }
+        self.errors.push(error);
+        true
+    }
+
+    pub fn as_slice(&self) -> &[ValidationError] {
+        &self.errors
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.errors.len() >= MAX_ERRORS
+    }
+
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    fn into_error(self) -> Error {
+        let mut error = Error::new(
+            ErrorKind::Validation,
+            "validation_failed",
+            "Validation failed",
+        );
+        error.details = self
+            .errors
+            .into_iter()
+            .map(|item| ErrorDetail {
+                field: item.field,
+                code: item.code,
+            })
+            .collect();
+        error
+    }
 }
 
 pub trait Request: Sized + Send + Sync {
@@ -28,11 +131,29 @@ pub trait Request: Sized + Send + Sync {
     ) -> impl Future<Output = Result<(), Error>> + Send + 'a;
 }
 
-/// 生成経路はT07が追加する。外部から未検証値を包むconstructorは公開しない。
+/// 同期検証の成功後だけ非同期検証を行う。基盤障害はvalidationに変換しない。
+pub async fn validate<T: Request>(value: T, context: &T::Context) -> Result<Validated<T>, Error> {
+    let mut errors = ValidationErrors::default();
+    value.validate_sync(&mut errors);
+    if !errors.is_empty() {
+        return Err(errors.into_error());
+    }
+    value.validate_async(context, &mut errors).await?;
+    if !errors.is_empty() {
+        return Err(errors.into_error());
+    }
+    Ok(Validated(value))
+}
+
+/// 外部から未検証値を包むconstructorは公開しない。
 ///
 /// ```compile_fail
 /// use kouga_validation::Validated;
 /// let unchecked = Validated("unvalidated");
+/// ```
+/// ```compile_fail
+/// use kouga_validation::Validated;
+/// fn change(value: &mut Validated<String>) { value.push_str("changed"); }
 /// ```
 #[derive(Debug)]
 pub struct Validated<T>(T);

@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 kouga-core.workspace = true
+email_address = { version = "=0.2.9", default-features = false }
