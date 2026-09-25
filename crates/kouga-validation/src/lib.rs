@@ -8,6 +8,9 @@ use kouga_core::{Error, ErrorDetail, ErrorKind};
 pub use kouga_request_derive::Request;
 pub use {kouga_core, schemars, serde, serde_json};
 
+#[cfg(feature = "axum")]
+pub mod axum;
+
 pub const MAX_ERRORS: usize = 100;
 pub const MAX_NESTING_DEPTH: usize = 32;
 
