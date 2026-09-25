@@ -32,6 +32,7 @@ pub struct Operation {
     pub path_schema: Option<serde_json::Value>,
     pub query_schema: Option<serde_json::Value>,
     pub request_body: Option<serde_json::Value>,
+    pub request_content_type: &'static str,
     pub responses: Vec<ResponseMeta>,
     pub security: Vec<String>,
     pub summary: Option<&'static str>,
@@ -50,6 +51,7 @@ impl Operation {
             path_schema: None,
             query_schema: None,
             request_body: None,
+            request_content_type: "application/json",
             responses: Vec::new(),
             security: Vec::new(),
             summary: None,
@@ -61,6 +63,14 @@ impl Operation {
 
     pub fn json_input<T: ApiSchema>(mut self) -> Self {
         self.request_body = Some(input_schema::<T>());
+        self.request_content_type = "application/json";
+        self
+    }
+
+    /// Describe multipart input. The handler remains responsible for parsing it.
+    pub fn multipart_input<T: ApiSchema>(mut self) -> Self {
+        self.request_body = Some(input_schema::<T>());
+        self.request_content_type = "multipart/form-data";
         self
     }
 

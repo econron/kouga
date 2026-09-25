@@ -1,0 +1,4 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    print!("{}", kouga_openapi::generate(&APP_CRATE::router(), "APP_CRATE", "0.1.0")?);
+    Ok(())
+}
