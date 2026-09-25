@@ -1,5 +1,5 @@
-use std::future::Future;
 use std::cell::Cell;
+use std::future::Future;
 use std::task::{Context, Poll, Waker};
 
 use kouga_core::{Error, ErrorKind, Patch};
