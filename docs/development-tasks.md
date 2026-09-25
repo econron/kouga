@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T12・T15・T17・T20〜T22・T26統合済み。T13・T14・T18・T23が着手可能
+状態: T00〜T12・T15・T17・T20〜T22・T26統合済み。T13・T14・T23が着手可能、T18はレビュー待ち（未統合）
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -57,7 +57,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
 | T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 未着手 |
 | T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
-| T18 | 認証の共通処理・policy | T10、T12、T17 | 未着手 |
+| T18 | 認証の共通処理・policy | T10、T12、T17 | レビュー待ち |
 | T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
@@ -473,10 +473,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T18 — 認証の共通処理・policy
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T18-auth-core`
-- worktree: `.worktrees/T18-auth-core`（作成前）
+- worktree: `.worktrees/T18-auth-core`
 - 依存: T10、T12、T17
 - 対応仕様: 4.3、4.2.1
 - 主担当領域: 認証runtime・policy・認証middleware
@@ -485,12 +485,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 平文・tokenの非保存、失効・期限・未認証の拒否、DB障害と認証失敗の区別を確認する。
-- [ ] 所有者以外の取得/更新/一覧への混入を拒否し、照合・policyをgRPCからも再利用できる。
+- [x] 平文・tokenの非保存、失効・期限・未認証の拒否、DB障害と認証失敗の区別を確認する。
+- [x] 所有者以外の取得/更新/一覧への混入を拒否し、照合・policyをgRPCからも再利用できる。
 
 **今回含めないこと**: メールリセットのAPI、OAuth/OIDC/MFA。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-auth`にArgon2id、ハッシュのみを保存する期限付きBearer token、失効、`CurrentUser`、明示許可policy、所有者scopeを実装。HTTPの`require_bearer`は既存middleware/OpenAPI security metadataへ接続し、401/503を区別する。専用PostgreSQL 17で発行・失効・期限・scopeを、HTTPテストで未認証/DB障害を確認。Rust 1.94 fmt/clippy/workspaceテストを実施。ユーザー表・ログイン/リセットAPI・rate limitはT19/T23、gRPC adapterはT28。T19はユーザー削除時のtoken失効またはFK cascadeも組み込む。パスワードハッシュは同期処理のためT19のHTTP loginではT03の制限付きblocking実行へ移す。実SMTP/本番高負荷環境は対象外。
 
 ### T19 — 認証API・リセット・auth生成
 

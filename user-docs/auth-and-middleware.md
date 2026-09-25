@@ -125,3 +125,16 @@ let app = router.with_state(state);
 ```
 
 ルート固有の処理は`Endpoint::middleware(fn)`で登録します。`HttpRequest::extensions_mut()`に入れた値はcontrollerで`Extension<T>`として受け取れます。`ClientIp`は接続元IPです。転送ヘッダーを使う場合は`HttpOptions::trusted_proxies`へ直近のプロキシIPを明示してください。レート制限は同じmiddleware APIで追加できますが、共有ストアはまだ提供していません。
+
+## 現在使える認証コア（T18）
+
+`kouga-auth`のmigrationをアプリのmigrationへ追加して適用すると、共通の`hash_password`/`verify_password`、`issue_token`/`authenticate`/`revoke_token`を使えます。ユーザー表と登録・ログイン・リセットAPIの生成はまだT19以降です。
+
+```rust,ignore
+use kouga_http::auth::require_bearer;
+
+let router = Router::<AppState>::new()
+    .middleware(require_bearer(|state: &AppState| &state.db));
+```
+
+`require_bearer`は401と認証DB障害の503を区別し、認証主体を`Extension<CurrentUser>`へ入れます。所有者別の取得・一覧には`owned_by(query, owner_column, actor)`を使用できます。更新・削除では同じtransaction内で所有者scope付きの`for_update`取得を行ってから操作してください。

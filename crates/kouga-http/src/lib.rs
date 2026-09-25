@@ -9,6 +9,7 @@ pub use axum::extract::{Extension, Path, State};
 pub use kouga_http_derive::endpoint;
 pub use kouga_validation::Validated;
 pub use kouga_validation::axum::ValidatedQuery;
+pub mod auth;
 mod http_stack;
 pub mod middleware;
 pub use middleware::{
@@ -52,6 +53,11 @@ impl IntoResponse for Error {
             }})),
         )
             .into_response();
+        if status == StatusCode::UNAUTHORIZED {
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
         response
             .extensions_mut()
             .insert(std::sync::Arc::new(self.0));
