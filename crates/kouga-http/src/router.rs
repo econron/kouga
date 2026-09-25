@@ -1,19 +1,39 @@
-use crate::{Endpoint, Error, Operation};
+use crate::{
+    Endpoint, Error, HttpOptions, HttpRequest, IntoMiddleware, Middleware, Next, Operation,
+};
+use axum::middleware::from_fn;
 use axum::response::IntoResponse;
 use axum::routing::MethodRouter;
 use http::{Method, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+struct RouteEntry<S> {
+    route: MethodRouter<S>,
+    operation: Operation,
+    middlewares: Vec<Middleware<S>>,
+}
 
 /// Register routes without constructing application state.
 pub struct Router<S> {
-    routes: BTreeMap<String, (MethodRouter<S>, Vec<Operation>)>,
+    routes: BTreeMap<String, Vec<RouteEntry<S>>>,
+    middlewares: Vec<Middleware<S>>,
+    options: HttpOptions,
+}
+
+pub struct Group<S> {
+    router: Router<S>,
+    prefix: String,
+    middlewares: Vec<Middleware<S>>,
 }
 
 impl<S> Default for Router<S> {
     fn default() -> Self {
         Self {
             routes: BTreeMap::new(),
+            middlewares: Vec::new(),
+            options: HttpOptions::default(),
         }
     }
 }
@@ -24,6 +44,40 @@ where
 {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn configure(mut self, options: HttpOptions) -> Result<Self, Error> {
+        options.validate()?;
+        self.options = options;
+        Ok(self)
+    }
+
+    pub fn middleware<M: IntoMiddleware<S>>(mut self, middleware: M) -> Self {
+        let middleware = middleware.into_middleware();
+        if let Some(name) = middleware.security {
+            for entries in self.routes.values_mut() {
+                for entry in entries {
+                    entry.operation.security.push(name.to_owned());
+                }
+            }
+        }
+        self.middlewares.push(middleware);
+        self
+    }
+
+    pub fn group(self, prefix: &str) -> Result<Group<S>, Error> {
+        if route_parameters(prefix).is_none() || (prefix != "/" && prefix.ends_with('/')) {
+            return Err(Error(CoreError::new(
+                ErrorKind::Internal,
+                "invalid_route",
+                "Invalid group prefix",
+            )));
+        }
+        Ok(Group {
+            router: self,
+            prefix: prefix.trim_end_matches('/').to_owned(),
+            middlewares: Vec::new(),
+        })
     }
 
     fn add(mut self, path: &str, method: Method, endpoint: Endpoint<S>) -> Result<Self, Error> {
@@ -63,8 +117,8 @@ where
             || self
                 .routes
                 .values()
-                .flat_map(|(_, operations)| operations)
-                .any(|operation| operation.operation_id == endpoint.operation.operation_id)
+                .flat_map(|entries| entries.iter())
+                .any(|entry| entry.operation.operation_id == endpoint.operation.operation_id)
         {
             return Err(Error(CoreError::new(
                 ErrorKind::Internal,
@@ -72,20 +126,25 @@ where
                 "Duplicate or missing operation ID",
             )));
         }
-        let (route, operation) = endpoint.into_route(method.clone());
-        let entry = self
-            .routes
-            .entry(path.to_owned())
-            .or_insert_with(|| (MethodRouter::new(), Vec::new()));
-        if entry.1.iter().any(|operation| operation.method == method) {
+        let (route, mut operation, middlewares) = endpoint.into_route(method.clone());
+        for middleware in &self.middlewares {
+            if let Some(name) = middleware.security {
+                operation.security.push(name.to_owned());
+            }
+        }
+        let entries = self.routes.entry(path.to_owned()).or_default();
+        if entries.iter().any(|entry| entry.operation.method == method) {
             return Err(Error(CoreError::new(
                 ErrorKind::Internal,
                 "route_conflict",
                 "Duplicate route",
             )));
         }
-        entry.0 = entry.0.clone().merge(route);
-        entry.1.push(operation.at(method, path));
+        entries.push(RouteEntry {
+            route,
+            operation: operation.at(method, path),
+            middlewares,
+        });
         Ok(self)
     }
 
@@ -108,24 +167,45 @@ where
     pub fn routes(&self) -> Vec<&Operation> {
         self.routes
             .iter()
-            .flat_map(|(_, (_, operations))| operations.iter())
+            .flat_map(|(_, entries)| entries.iter().map(|entry| &entry.operation))
             .collect()
     }
 
     pub fn with_state(self, state: S) -> axum::Router {
         let mut router = axum::Router::new();
-        for (path, (route, operations)) in self.routes {
-            let mut allowed: Vec<&str> = operations
+        for (path, entries) in self.routes {
+            let mut allowed: Vec<String> = entries
                 .iter()
-                .map(|operation| operation.method.as_str())
+                .map(|entry| entry.operation.method.as_str().to_owned())
                 .collect();
-            if operations
+            if entries
                 .iter()
-                .any(|operation| operation.method == Method::GET)
+                .any(|entry| entry.operation.method == Method::GET)
             {
-                allowed.push("HEAD");
+                allowed.push("HEAD".to_owned());
             }
-            allowed.push("OPTIONS");
+            let mut route = MethodRouter::new();
+            for entry in entries {
+                let route_entry = if entry.middlewares.is_empty() {
+                    entry.route
+                } else {
+                    let chain = Arc::new(entry.middlewares);
+                    let state = state.clone();
+                    entry.route.layer(from_fn(move |request, next| {
+                        let chain = chain.clone();
+                        let state = state.clone();
+                        async move {
+                            let request = HttpRequest::new(request, state.clone());
+                            Next::new(chain, next, state)
+                                .run(request)
+                                .await
+                                .unwrap_or_else(axum::response::IntoResponse::into_response)
+                        }
+                    }))
+                };
+                route = route.merge(route_entry);
+            }
+            allowed.push("OPTIONS".to_owned());
             allowed.sort_unstable();
             let allow = allowed.join(", ");
             let options_allow = allow.clone();
@@ -146,7 +226,7 @@ where
             });
             router = router.route(&path, route);
         }
-        router
+        let app = router
             .fallback(|| async {
                 Error(CoreError::new(
                     ErrorKind::NotFound,
@@ -154,7 +234,51 @@ where
                     "Not found",
                 ))
             })
-            .with_state(state)
+            .with_state(state.clone());
+        crate::http_stack::apply(app, state, self.middlewares, self.options)
+    }
+}
+
+impl<S: Clone + Send + Sync + 'static> Group<S> {
+    pub fn middleware<M: IntoMiddleware<S>>(mut self, middleware: M) -> Self {
+        self.middlewares.push(middleware.into_middleware());
+        self
+    }
+
+    fn add(mut self, path: &str, method: Method, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        if !path.starts_with('/') {
+            return Err(Error(CoreError::new(
+                ErrorKind::Internal,
+                "invalid_route",
+                "Invalid group route",
+            )));
+        }
+        let full_path = format!("{}{}", self.prefix, path);
+        self.router = self.router.add(
+            &full_path,
+            method,
+            endpoint.prepend_middlewares(self.middlewares.clone()),
+        )?;
+        Ok(self)
+    }
+
+    pub fn get(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::GET, endpoint)
+    }
+    pub fn post(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::POST, endpoint)
+    }
+    pub fn put(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::PUT, endpoint)
+    }
+    pub fn patch(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::PATCH, endpoint)
+    }
+    pub fn delete(self, path: &str, endpoint: Endpoint<S>) -> Result<Self, Error> {
+        self.add(path, Method::DELETE, endpoint)
+    }
+    pub fn finish(self) -> Router<S> {
+        self.router
     }
 }
 

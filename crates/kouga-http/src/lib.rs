@@ -5,14 +5,19 @@ use http::{HeaderValue, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
 use serde::Serialize;
 
-pub use axum::extract::{Path, State};
+pub use axum::extract::{Extension, Path, State};
 pub use kouga_http_derive::endpoint;
 pub use kouga_validation::Validated;
 pub use kouga_validation::axum::ValidatedQuery;
+mod http_stack;
+pub mod middleware;
+pub use middleware::{
+    ClientIp, HttpOptions, HttpRequest, IntoMiddleware, Middleware, Next, bearer_auth,
+};
 mod endpoint;
 pub use endpoint::{ApiInput, ApiOutput, Endpoint, Operation, Parameter, ResponseMeta};
 pub mod router;
-pub use router::Router;
+pub use router::{Group, Router};
 
 #[derive(Debug)]
 pub struct Error(pub CoreError);
@@ -39,14 +44,18 @@ impl IntoResponse for Error {
             ErrorKind::Timeout => StatusCode::GATEWAY_TIMEOUT,
             ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (
+        let mut response = (
             status,
             AxumJson(serde_json::json!({"error": {
                 "code": self.0.code, "message": self.0.message,
-                "details": self.0.details,
+                "details": &self.0.details,
             }})),
         )
-            .into_response()
+            .into_response();
+        response
+            .extensions_mut()
+            .insert(std::sync::Arc::new(self.0));
+        response
     }
 }
 

@@ -37,13 +37,15 @@ fn safe_error(error: Error) -> Response {
         ErrorKind::Timeout => StatusCode::GATEWAY_TIMEOUT,
         ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    (
+    let mut response = (
         status,
         Json(serde_json::json!({"error": {
-            "code": error.code, "message": error.message, "details": error.details
+            "code": error.code, "message": error.message, "details": &error.details
         }})),
     )
-        .into_response()
+        .into_response();
+    response.extensions_mut().insert(std::sync::Arc::new(error));
+    response
 }
 
 fn too_deep(value: &Value, depth: usize) -> bool {
