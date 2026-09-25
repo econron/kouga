@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T02完了、T03以降未着手
+状態: T00〜T03・T07統合済み、T04・T08着手準備
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -42,11 +42,11 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T00 | ローカルGit管理の開始 | なし | 完了 |
 | T01 | 利用者向けAPIと共通契約の確定 | T00 | 完了 |
 | T02 | Cargo workspace・最小CI | T01 | 完了 |
-| T03 | 設定・起動・通常ログ | T02 | 未着手 |
+| T03 | 設定・起動・通常ログ | T02 | 完了 |
 | T04 | DB接続・トランザクション・DBエラー | T03 | 未着手 |
 | T05 | migrationの生成・適用・履歴 | T04 | 未着手 |
 | T06 | migrationの巻き戻し・復旧・管理操作 | T05 | 未着手 |
-| T07 | validationの基本型と実行 | T02 | 未着手 |
+| T07 | validationの基本型と実行 | T02 | 完了 |
 | T08 | Requestのderiveと検証メタデータ | T07 | 未着手 |
 | T09 | HTTP router・controller・レスポンス | T03、T08 | 未着手 |
 | T10 | middleware基盤と標準middleware | T09 | 未着手 |
@@ -154,10 +154,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T03 — 設定・起動・通常ログ
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（mainへ統合済み）
+- 担当者: subagent
 - ブランチ: `task/T03-runtime-config`
-- worktree: `.worktrees/T03-runtime-config`（作成前）
+- worktree: `.worktrees/T03-runtime-config`
 - 依存: T02
 - 対応仕様: 3.1、4.14、4.15、第5節
 - 主担当領域: 共通runtime・設定・通常ログ
@@ -171,7 +171,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: OTel SDK/exporter、HTTP専用のmiddleware。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-runtime`に型付き設定、環境別上書き、秘密値参照、Tokio起動、上限付きblocking実行、終了猶予、JSON形式の通常ログを追加。Rust 1.94.0で`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --locked`を通過（runtime 6テスト）。`git diff --check`も通過。SIGTERMの実シグナルと実サービス結合は未検証。OTelとHTTP専用middlewareは含めない。`Cargo.lock`の変更はT07と統合時に調整する。
 
 ### T04 — DB接続・トランザクション・DBエラー
 
@@ -238,10 +238,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T07 — validationの基本型と実行
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（mainへ統合済み）
+- 担当者: subagent
 - ブランチ: `task/T07-validation-core`
-- worktree: `.worktrees/T07-validation-core`（作成前）
+- worktree: `.worktrees/T07-validation-core`
 - 依存: T02
 - 対応仕様: 4.6、4.6.1
 - 主担当領域: validation runtime・公開型
@@ -255,7 +255,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: HTTPの入力抽出、DBへの自動書き込み、独自validatorクラス体系。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-validation`に基本`Rule`、最大100件の検証エラー、同期成功後だけ非同期を実行する`validate`、`Validated`の不正構築・変更を拒否するcompile-failテストを追加。`Patch`の3状態はT02のcore実装を利用。Rust 1.94.0で`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --locked`を通過。`git diff --check`も通過。T08ではderiveによるOption/Patchのルール省略、ネスト深度32、順序・上限での打切り、schemaへのRule接続が必要。`Cargo.lock`の変更はT03と統合時に調整する。
 
 ### T08 — Requestのderiveと検証メタデータ
 
