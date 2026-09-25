@@ -106,7 +106,7 @@ let project = task.project(&db).await?;
 
 ```rust
 let tasks = Task::query()
-    .preload(Task::project)
+    .preload(task::relations::project())
     .limit(20)
     .fetch_all(&db)
     .await?;
@@ -114,7 +114,9 @@ let tasks = Task::query()
 
 タスクを取得してから、必要なプロジェクトをまとめて取得します。タスク一件ごとにプロジェクトを問い合わせる必要はありません。
 
-preloadの結果は、親modelと取得済みの関連を持ちます。通常のmodelと型を分けるので、「まだ取得していない」と「取得したけれど存在しない」を混同しません。結果型の具体的な書き方は設計中です。
+preloadの結果は`Vec<Loaded<Task, Project>>`です。各要素の`row.model`がTask、`row.related`が取得済みProjectです。任意の関連ならOption、複数の関連先ならVecになります。通常のmodelと型を分けるので、「まだ取得していない」と「取得したけれど存在しない」を混同しません。
+
+`task::relations`はModelから生成する関連指定用のモジュールです。単件の取得メソッド`task.project(...)`と名前を衝突させずに使えます。詳しい契約は[共通API契約](../docs/api-contracts.md)を参照してください（実装前）。
 
 関連が非常に多い場合は、関連用のqueryでページングしてください。また、関連をたどれることと、利用者に見せてよいことは別です。[認証と認可](auth-and-middleware.md)の条件を関連queryにも適用します。
 

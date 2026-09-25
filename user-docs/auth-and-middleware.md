@@ -61,8 +61,8 @@ let task = Task::query()
 
 ```rust
 pub async fn add_api_version(
-    request: HttpRequest,
-    next: Next,
+    request: HttpRequest<AppState>,
+    next: Next<AppState>,
 ) -> Result<Response, Error> {
     let mut response = next.run(request).await?;
     response.headers_mut().insert(
@@ -82,7 +82,7 @@ router.group("/tasks")
     .resource(tasks::routes());
 ```
 
-登録順に入り、戻る処理は逆順です。`next.run(request)`を呼べば次へ進み、呼ばずにエラーやレスポンスを返せばそこで終了します。上例のヘッダー追加は成功レスポンスが対象で、エラーは共通のエラー処理へ渡します。
+登録順に入り、戻る処理は逆順です。`next.run(request)`を呼べば次へ進み、呼ばずにエラーやレスポンスを返せばそこで終了します。上例は返ってきたレスポンスにヘッダーを付け、Errは共通のエラー処理へ渡します。入力抽出の拒否など、すでにレスポンスになったエラーもあるため、成功時だけ加工したい場合はstatusも確認します。
 
 ## 認証middlewareの中身
 
@@ -90,8 +90,8 @@ router.group("/tasks")
 
 ```rust
 pub async fn require_user(
-    mut request: HttpRequest,
-    next: Next,
+    mut request: HttpRequest<AppState>,
+    next: Next<AppState>,
 ) -> Result<Response, Error> {
     let token = bearer_token(request.headers())?;
     let user = authenticate(request.state().db(), token).await?;

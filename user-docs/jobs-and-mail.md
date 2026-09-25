@@ -76,14 +76,14 @@ handlerの案です。
 ```rust
 pub async fn send_welcome_email(
     job: SendWelcomeEmail,
-    ctx: JobContext,
+    ctx: JobContext<WorkerState>,
 ) -> Result<(), JobError> {
-    let Some(user) = User::find(&ctx.db, job.user_id).await? else {
+    let Some(user) = User::find(&ctx.state.db, job.user_id).await? else {
         return Ok(()); // 送信前に退会済みなら、何もせず完了する。
     };
 
     Welcome::to(&user.email)
-        .deliver(&ctx.mailer)
+        .deliver(&ctx.state.mailer)
         .await?;
     Ok(())
 }
@@ -92,10 +92,10 @@ pub async fn send_welcome_email(
 実行処理はworker側で登録します。
 
 ```rust
-worker.register::<SendWelcomeEmail>(send_welcome_email);
+worker.register::<SendWelcomeEmail>(send_welcome_email)?;
 ```
 
-通常はgeneratorが登録箇所を用意します。HTTP側はこのhandlerにも、SMTPライブラリにも依存しません。
+通常はgeneratorが登録箇所を用意します。WorkerStateには、このworkerが使うDBやmailerだけを持たせます。HTTP側はこのhandlerにも、SMTPライブラリにも依存しません。投入側は`kouga_queue::Enqueue`をimportして`enqueue`を使います。
 
 ## 常駐して処理する
 

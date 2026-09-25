@@ -4,6 +4,8 @@
 作成日: 2026-09-25  
 対象: 初版の機能・振る舞い・受け入れ条件
 
+T01で具体化した型・依存・生成記法は[共通API契約](api-contracts.md)を参照する（レビュー承認済み・実装前）。本書中の「実装時に確定」「設計案」は、同契約で具体化した項目についてはそちらを優先する。機能範囲・受け入れ条件は本書を維持する。
+
 ## 1. 目的
 
 Rustで、規約に沿って少ない記述でAPIアプリケーションを開発できるフレームワークを作る。RailsのAPIモードを参考に、ルーティングから永続化、バックグラウンド処理、運用までを一貫した開発体験として提供する。
@@ -175,7 +177,7 @@ Request型は操作ごとに定義し、入力項目と検証ルールをまと�
 基本案は、`async fn(request, next) -> Result<Response, Error>`という通常の非同期関数を登録する方式とする。独自クラス、継承、専用traitの手書き実装を必須にしない。以下の型名・記法は公開APIの設計例であり、コンパイル可能な実装ではない。
 
 ```rust,ignore
-async fn require_auth(mut request: HttpRequest, next: Next) -> Result<Response, Error> {
+async fn require_auth(mut request: HttpRequest<AppState>, next: Next<AppState>) -> Result<Response, Error> {
     let token = bearer_token(request.headers())?;
     let user = authenticate(request.state().db(), token).await?;
     request.extensions_mut().insert(CurrentUser::from(user));
