@@ -408,10 +408,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T15 — CLI基盤と新規アプリ生成
 
-- 状態: 未着手
-- 担当者: 未割当
-- ブランチ: `task/T15-cli-core`
-- worktree: `.worktrees/T15-cli-core`（作成前）
+- 状態: 実装・検証済み（レビュー待ち）
+- 担当者: subagent
+- ブランチ: `task/T15-cli`
+- worktree: `.worktrees/T15-cli`
 - 依存: T03、T09
 - 対応仕様: 4.17、3.2
 - 主担当領域: CLIの共通処理・new/server/routes
@@ -420,12 +420,14 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 新しい一時ディレクトリから生成アプリがビルド・起動できる。
-- [ ] 名称・生成先・衝突検査、既存ファイル保護、失敗終了コード、秘密情報の非表示を確認する。
+- [x] 新しい一時ディレクトリから生成アプリがビルド・起動できる。
+- [x] 名称・生成先・衝突検査、既存ファイル保護、失敗終了コード、秘密情報の非表示を確認する。
 
 **今回含めないこと**: resourceなどの機能別テンプレート、クラウドの公開操作。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**公開API**: `kouga new <name> [--path <destination>]`、`kouga server [--api http]`、`kouga routes`。生成アプリの入口は`src/bin/server.rs`と`src/bin/routes.rs`に分離。`--api grpc`は未対応として非ゼロ終了する。
+
+**検証結果・後続への引き継ぎ**: 新しい一時ディレクトリで生成アプリをビルドし、`kouga routes`で`GET /health health.check`、`kouga server`で起動して`GET /health`の200/JSONを確認。既存生成先・不正名称・未実装APIを非ゼロ終了で拒否し、ファイルを保護。生成時にsecretをログ出力しない。Rust 1.94 fmt/clippy/workspace testを実行。未公開crateのため生成アプリはローカルcheckoutへのpath依存であり、checkout移動後の可搬性は未対応。T06のDB/migration CLI、T29のgRPC入口、機能別generatorは含めない。
 
 ### T16 — model・resource・Requestのgenerator
 

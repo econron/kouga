@@ -65,6 +65,8 @@ Rust **1.94.0以上**、edition 2024、Cargo resolver 3を採用する。SQLx 0.
 | kouga-http-derive | T09 | endpoint登録情報の生成 |
 | kouga-openapi | T14 | route/schema → YAMLとUI。http |
 | kouga-cli | T15/T16/T19/T29/T30 | CLIとtemplates。テンプレートは機能別ディレクトリ |
+
+T15時点のCLIは`kouga new <name> [--path <destination>]`、`kouga server [--api http]`、`kouga routes`のみ実装する。生成アプリは現段階ではローカルKouga checkoutをpath依存として参照する（未公開crateの配布方法は後続課題）。`--api grpc`や`db`/`generate`はT15で仮実装しない。
 | kouga-test | T17 | HTTP/DB検証支援。http、migration |
 | kouga-auth | T18 | token照合・password・policy。db、runtime。HTTP専用関数はhttp側 |
 | kouga-job / kouga-job-derive | T20 | payload契約 / derive。serdeのみ、DB/workerなし |

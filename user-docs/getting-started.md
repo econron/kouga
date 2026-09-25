@@ -4,6 +4,8 @@
 
 > 設計中の利用体験です。KougaのCLIはまだ配布されていません。以下は、提供時にたどれるようにしたい手順と出力の案です。
 
+現在のT15プレビューでは、リポジトリ内で`cargo run -p kouga-cli -- new taskboard`を実行するとHTTP専用の最小アプリを作れます。生成先で`kouga server`、`kouga routes`を使えますが、生成アプリはローカルのKougaソースへのpath依存を持ちます。resource生成・DB操作・gRPC・OpenAPI表示はまだこのCLIに含まれません。
+
 タスクを登録して、一覧を取得するAPIを作ります。このガイドでは、まずローカルで動く一周を体験します。
 
 ## 準備するもの
