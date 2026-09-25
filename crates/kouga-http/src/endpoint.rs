@@ -1,4 +1,7 @@
-use crate::{Created, Json, NoContent, Page, Path, Validated, ValidatedQuery};
+use crate::{
+    Created, Extension, IntoMiddleware, Json, Middleware, NoContent, Page, Path, Validated,
+    ValidatedQuery,
+};
 use axum::handler::Handler;
 use axum::routing::{MethodRouter, delete, get, patch, post, put};
 use http::{Method, StatusCode};
@@ -114,6 +117,11 @@ impl<T: kouga_validation::Request + ApiSchema> ApiInput for ValidatedQuery<T> {
         operation.query_input::<T>()
     }
 }
+impl<T: Clone + Send + Sync + 'static> ApiInput for Extension<T> {
+    fn describe(operation: Operation) -> Operation {
+        operation
+    }
+}
 
 fn input_schema<T: ApiSchema>() -> serde_json::Value {
     let mut generator = schemars::SchemaGenerator::default();
@@ -178,6 +186,7 @@ impl ApiOutput for NoContent {
 pub struct Endpoint<S> {
     pub operation: Operation,
     route: Box<dyn Fn(Method) -> MethodRouter<S> + Send + Sync>,
+    middlewares: Vec<Middleware<S>>,
 }
 
 impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
@@ -191,6 +200,7 @@ impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
     {
         Self {
             operation,
+            middlewares: Vec::new(),
             route: Box::new(move |method| match method {
                 Method::GET => get(handler.clone()),
                 Method::POST => post(handler.clone()),
@@ -202,7 +212,30 @@ impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
         }
     }
 
-    pub(crate) fn into_route(self, method: Method) -> (MethodRouter<S>, Operation) {
-        ((self.route)(method), self.operation)
+    pub fn middleware<M: IntoMiddleware<S>>(mut self, middleware: M) -> Self {
+        let middleware = middleware.into_middleware();
+        if let Some(name) = middleware.security {
+            self.operation.security.push(name.to_owned());
+        }
+        self.middlewares.push(middleware);
+        self
+    }
+
+    pub(crate) fn prepend_middlewares(mut self, mut group: Vec<Middleware<S>>) -> Self {
+        for middleware in &group {
+            if let Some(name) = middleware.security {
+                self.operation.security.push(name.to_owned());
+            }
+        }
+        group.append(&mut self.middlewares);
+        self.middlewares = group;
+        self
+    }
+
+    pub(crate) fn into_route(
+        self,
+        method: Method,
+    ) -> (MethodRouter<S>, Operation, Vec<Middleware<S>>) {
+        ((self.route)(method), self.operation, self.middlewares)
     }
 }

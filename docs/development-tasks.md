@@ -301,10 +301,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T10 — middleware基盤と標準middleware
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 実装・検証済み（レビュー待ち）
+- 担当者: subagent
 - ブランチ: `task/T10-middleware`
-- worktree: `.worktrees/T10-middleware`（作成前）
+- worktree: `.worktrees/T10-middleware`
 - 依存: T09
 - 対応仕様: 4.2、4.2.1、3.1
 - 主担当領域: HTTP middleware
@@ -313,12 +313,14 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 順序・途中終了・extensions、CORS/preflight、request ID・アクセスログ・共通エラーを検証する。
-- [ ] timeout・サイズ制限・信頼プロキシ・同時処理上限を検証し、streamingを壊さない。共有レート制限を後付けできる。
+- [x] 順序・途中終了・extensions、CORS/preflight、request ID・アクセスログ・共通エラーを検証する。
+- [x] timeout・サイズ制限・信頼プロキシ・同時処理上限を検証し、streamingを壊さない。共有レート制限を後付けできる。
 
 **今回含めないこと**: 認証ストア、共有レート制限ストア。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**公開API**: `Router::middleware`、`Router::group(...).middleware(...).finish()`、`Endpoint::middleware`、`bearer_auth`、`HttpOptions`/`Router::configure`、`HttpRequest<S>`/`Next<S>`、`RequestId`/`ClientIp` extensions。共有rate-limit storeは対象外だが通常middlewareで429等を実装可能。
+
+**検証結果・後続への引き継ぎ**: HTTP結合テスト6件でglobal/group/route順、短絡とvalidation順、extensions、CORS、共通エラー/request ID、timeout、Content-Length有無の413、trusted proxy、ストリーム中の同時実行枠を検証。アクセスログは`tracing::info!`でrequest ID・method・path・status・duration・client IPのみ出力し、query/ヘッダーを含めない（出力捕捉の自動テストは未実施）。Rust 1.94のfmt/clippy/workspace testを実行。ローカルポートが必要な既存OTLPテストだけsandboxで失敗したため、workspace testを許可済み環境で再実行して全件通過。実TCP/ブラウザ越しのCORS確認および共有rate-limit storeは未検証・対象外。
 
 ### T11 — modelのCRUD・query実行
 

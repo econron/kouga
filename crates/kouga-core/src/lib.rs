@@ -4,6 +4,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt;
 
+/// 入口で生成し、同じリクエストのログとエラー応答へ渡すID。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestId(pub String);
+
+impl fmt::Display for RequestId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 /// 更新時の「省略」と「指定された値」を区別する。
 /// `Patch<Option<T>>`では`Value(None)`が明示的なnullを表す。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

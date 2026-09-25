@@ -7,13 +7,19 @@ license.workspace = true
 
 [dependencies]
 axum = { version = "=0.8.9", default-features = false, features = ["json", "query", "tokio", "http1"] }
+futures-util = "=0.3.34"
 http = "=1.5.0"
+http-body-util = "=0.1.5"
 kouga-core.workspace = true
 kouga-http-derive = { path = "../kouga-http-derive" }
 kouga-validation = { path = "../kouga-validation", features = ["axum"] }
 serde.workspace = true
 serde_json.workspace = true
 schemars = { version = "=1.2.2", default-features = false, features = ["std"] }
+tokio = { version = "=1.53.1", features = ["sync", "time"] }
+tower-http = { version = "=0.7.1", features = ["cors", "limit"] }
+tracing = "=0.1.44"
+uuid = { version = "=1.26.1", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["macros", "rt"] }

@@ -105,3 +105,23 @@ pub async fn require_user(
 `HttpRequest`はHTTPそのもの、`CreateTaskRequest`などのRequest型は検証する入力です。自分の認証処理に差し替える場合も、`bearer_auth`で登録すれば実行時の認証とOpenAPIの説明を同じ場所に置けます。
 
 **次へ：[ジョブとメール](jobs-and-mail.md)**
+
+## 現在使えるmiddleware API（T10）
+
+以下は実装済みの低レベルHTTP APIです。上記の`resource(...)`や認証生成コマンドは引き続きプレビューです。
+
+```rust
+let router = Router::<AppState>::new()
+    .configure(HttpOptions {
+        cors_origins: vec!["https://example.com".into()],
+        ..HttpOptions::default()
+    })?
+    .middleware(add_api_version)
+    .group("/tasks")?
+    .middleware(bearer_auth(require_user))
+    .get("/", list_tasks_endpoint())?
+    .finish();
+let app = router.with_state(state);
+```
+
+ルート固有の処理は`Endpoint::middleware(fn)`で登録します。`HttpRequest::extensions_mut()`に入れた値はcontrollerで`Extension<T>`として受け取れます。`ClientIp`は接続元IPです。転送ヘッダーを使う場合は`HttpOptions::trusted_proxies`へ直近のプロキシIPを明示してください。レート制限は同じmiddleware APIで追加できますが、共有ストアはまだ提供していません。

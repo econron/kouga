@@ -948,7 +948,9 @@ name = "kouga-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-util",
  "http",
+ "http-body-util",
  "kouga-core",
  "kouga-http-derive",
  "kouga-validation",
@@ -957,6 +959,9 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1555,7 +1560,7 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tower",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -2299,6 +2304,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-http"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a05a66a4fdd61cbbe0a1d755ffe0ca6aba159dd4820936a0ff8a8278245b9c"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "percent-encoding",
+ "pin-project-lite",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
 name = "tower-layer"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2468,6 +2490,7 @@ version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
  "wasm-bindgen",

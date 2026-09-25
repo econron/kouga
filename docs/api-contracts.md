@@ -190,6 +190,8 @@ endpoint macroのadapterはcontrollerが返すResultをIntoResponseより先に�
 
 `Created<T>`=201/Location/data、`Json<T>`=200/data、`Page<T>`=200/data/meta、`NoContent`=204/bodyなし。Location不正など応答構築の失敗はInternalとする。ModelをそのままSerializeせず公開出力型を生成する。
 
+T10時点の登録APIは`Router::middleware(fn)`、`Router::group("/prefix")?.middleware(fn).get(...).finish()`、`Endpoint::middleware(fn)`。`Router::configure(HttpOptions { ..Default::default() })?`で本文上限（既定1 MiB）、同時実行上限（256）、timeout（30秒）、CORS許可origin、trusted proxyの正確なIPを指定する。CORSは明示したoriginのみ有効で、credential付き`*`は拒否する。`ClientIp`と`RequestId`はrequest extensionsに入り、controllerでは`Extension<T>`で受け取れる。共有レート制限はmiddlewareを追加する拡張点のみ提供し、ストアは含まない。`X-Request-ID`を全応答に付与し、共通エラーには`request_id`を含める。
+
 ## 7. DB・model・query
 
 `Db = sqlx::PgPool`、`Transaction<'a> = sqlx::Transaction<'a, Postgres>`を再公開する。独自executor traitは作らない。各操作は`A: sqlx::Acquire<'c, Database=Postgres> + Send`を受け、先頭でacquireして得たconnectionを操作終了まで使う。内部helperは`&mut PgConnection`を取る。これにより`&db`と`&mut tx`を共通で扱う。複数SQLの途中でpoolへ戻らない。
