@@ -757,6 +757,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kouga-model"
+version = "0.1.0"
+dependencies = [
+ "kouga-db",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "kouga-request-derive"
 version = "0.1.0"
 dependencies = [
