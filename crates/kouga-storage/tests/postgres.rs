@@ -37,6 +37,12 @@ async fn local_lifecycle_and_failures() {
     };
     let saved = storage.save(policy(), source()).await.unwrap();
     assert_eq!(saved.byte_size, 12);
+    let key: String = sqlx::query_scalar("SELECT storage_key FROM kouga_files WHERE id = $1")
+        .bind(saved.id)
+        .fetch_one(test.db())
+        .await
+        .unwrap();
+    assert!(!key.contains("avatar.png"));
     assert!(matches!(
         storage.download(stranger, saved.id).await,
         Err(StorageError::NotFound)
@@ -103,7 +109,7 @@ async fn local_lifecycle_and_failures() {
                 source()
             )
             .await,
-        Err(StorageError::Invalid(_))
+        Err(StorageError::TooLarge)
     ));
     assert!(matches!(
         storage
@@ -112,7 +118,7 @@ async fn local_lifecycle_and_failures() {
                 stream::iter([Ok::<_, io::Error>(Bytes::from_static(b"not a png"))])
             )
             .await,
-        Err(StorageError::Invalid(_))
+        Err(StorageError::UnsupportedType)
     ));
     let failed = storage
         .save(
@@ -147,6 +153,9 @@ async fn local_lifecycle_and_failures() {
         storage.download(owner, pending.id).await,
         Err(StorageError::NotFound)
     ));
+    let temporary = Storage::in_memory(test.db().clone());
+    let memory_file = temporary.save(policy(), source()).await.unwrap();
+    temporary.delete(owner, memory_file.id).await.unwrap();
     drop(storage);
     test.close().await.unwrap();
     std::fs::remove_dir_all(root).unwrap();
@@ -215,6 +224,7 @@ async fn s3_streaming_and_signed_url() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     assert_eq!(response.headers()["content-type"], "image/png");
     assert_eq!(response.headers()["content-disposition"], "attachment");
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
     assert_eq!(response.bytes().await.unwrap().len(), 11 * 1024 * 1024);
     let unavailable = AmazonS3Builder::new()
         .with_endpoint("http://127.0.0.1:1")

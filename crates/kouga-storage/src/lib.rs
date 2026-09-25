@@ -18,9 +18,12 @@ pub const SCHEMA_SQL: &str = include_str!("../migrations/20260925000024_create_k
 #[derive(Debug)]
 pub enum StorageError {
     Invalid(&'static str),
+    TooLarge,
+    UnsupportedType,
     NotFound,
     Database(kouga_db::DbError),
     Object(object_store::Error),
+    Io(std::io::Error),
     Input(String),
 }
 
@@ -28,9 +31,12 @@ impl fmt::Display for StorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::Invalid(_) => "invalid file",
+            Self::TooLarge => "file too large",
+            Self::UnsupportedType => "unsupported file type",
             Self::NotFound => "file not found",
             Self::Database(_) => "database error",
             Self::Object(_) => "storage error",
+            Self::Io(_) => "storage I/O error",
             Self::Input(_) => "upload stream error",
         };
         f.write_str(message)
@@ -42,6 +48,7 @@ impl std::error::Error for StorageError {
         match self {
             Self::Database(e) => Some(e),
             Self::Object(e) => Some(e),
+            Self::Io(e) => Some(e),
             _ => None,
         }
     }
@@ -56,6 +63,30 @@ impl From<sqlx::Error> for StorageError {
 impl From<object_store::Error> for StorageError {
     fn from(value: object_store::Error) -> Self {
         Self::Object(value)
+    }
+}
+
+impl From<StorageError> for kouga_core::Error {
+    fn from(error: StorageError) -> Self {
+        use kouga_core::{Error, ErrorKind};
+        let (kind, code, message) = match error {
+            StorageError::Invalid(_) | StorageError::Input(_) => {
+                (ErrorKind::BadRequest, "invalid_file", "Invalid file")
+            }
+            StorageError::TooLarge => (ErrorKind::TooLarge, "file_too_large", "File too large"),
+            StorageError::UnsupportedType => (
+                ErrorKind::UnsupportedMediaType,
+                "unsupported_file_type",
+                "Unsupported file type",
+            ),
+            StorageError::NotFound => (ErrorKind::NotFound, "file_not_found", "File not found"),
+            StorageError::Database(_) | StorageError::Object(_) | StorageError::Io(_) => (
+                ErrorKind::Unavailable,
+                "storage_unavailable",
+                "Storage unavailable",
+            ),
+        };
+        Error::new(kind, code, message).with_source(error)
     }
 }
 
@@ -167,7 +198,7 @@ impl Storage {
             .iter()
             .copied()
             .find(|kind| kind.content_type() == upload.declared_content_type)
-            .ok_or(StorageError::Invalid("content type not allowed"))?;
+            .ok_or(StorageError::UnsupportedType)?;
         let id = Uuid::new_v4();
         let key = format!("files/{}/{}", &id.simple().to_string()[..2], id.simple());
         sqlx::query("INSERT INTO kouga_files (id, owner_id, storage_key, original_name, content_type) VALUES ($1, $2, $3, $4, $5)")
@@ -193,9 +224,9 @@ impl Storage {
                 let chunk = chunk.map_err(|e| StorageError::Input(e.to_string()))?;
                 size = size
                     .checked_add(chunk.len() as u64)
-                    .ok_or(StorageError::Invalid("file too large"))?;
+                    .ok_or(StorageError::TooLarge)?;
                 if size > upload.max_bytes {
-                    return Err(StorageError::Invalid("file too large"));
+                    return Err(StorageError::TooLarge);
                 }
                 if prefix.len() < 8 {
                     prefix.extend_from_slice(&chunk[..chunk.len().min(8 - prefix.len())]);
@@ -203,14 +234,11 @@ impl Storage {
                 writer.put(chunk).await?;
             }
             if !kind.recognizes(&prefix) {
-                return Err(StorageError::Invalid("file signature mismatch"));
+                return Err(StorageError::UnsupportedType);
             }
             use tokio::io::AsyncWriteExt;
             shutdown_started = true;
-            writer
-                .shutdown()
-                .await
-                .map_err(|e| StorageError::Input(e.to_string()))?;
+            writer.shutdown().await.map_err(StorageError::Io)?;
             Ok::<_, StorageError>(())
         }
         .await;
@@ -370,5 +398,9 @@ mod tests {
         assert!(FileKind::Png.recognizes(b"\x89PNG\r\n\x1a\ncontent"));
         assert!(!FileKind::Png.recognizes(b"not a png"));
         assert!(FileKind::Jpeg.recognizes(b"\xff\xd8\xffcontent"));
+        let error: kouga_core::Error = StorageError::TooLarge.into();
+        assert_eq!(error.kind, kouga_core::ErrorKind::TooLarge);
+        let error: kouga_core::Error = StorageError::UnsupportedType.into();
+        assert_eq!(error.kind, kouga_core::ErrorKind::UnsupportedMediaType);
     }
 }
