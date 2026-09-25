@@ -1,6 +1,10 @@
-use kouga_http::{Created, Endpoint, Json, NoContent, Operation, Router, Validated};
+use kouga_http::{
+    Created, Endpoint, Json, Multipart, NoContent, Operation, Router, Validated, endpoint,
+};
 use kouga_openapi::generate;
-use kouga_validation::{Request, kouga_core::Patch, validate};
+use kouga_validation::{
+    ApiSchema, Request, SchemaDirection, kouga_core::Patch, schemars, validate,
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -91,24 +95,72 @@ fn invalid_references_and_duplicate_ids_fail() {
     );
 }
 
-#[test]
-fn multipart_metadata_uses_declared_media_type() {
-    let mut operation = Operation::new("files.upload").response::<NoContent>();
-    operation.request_body = Some(
-        json!({"type":"object","required":["file"],"properties":{"file":{"type":"string","format":"binary"}}}),
-    );
-    operation.request_content_type = "multipart/form-data";
+struct UploadSchema;
+
+impl ApiSchema for UploadSchema {
+    fn schema(_: &mut schemars::SchemaGenerator, _: SchemaDirection) -> schemars::Schema {
+        schemars::Schema::try_from(json!({
+            "type":"object","required":["file"],
+            "properties":{"file":{"type":"string","format":"binary"}}
+        }))
+        .unwrap()
+    }
+}
+
+#[endpoint(operation_id = "files.upload")]
+async fn upload(mut form: Multipart<UploadSchema>) -> Json<usize> {
+    let mut size = 0;
+    while let Some(mut field) = form.next_field().await.unwrap() {
+        while let Some(chunk) = field.chunk().await.unwrap() {
+            size += chunk.len();
+        }
+    }
+    Json(size)
+}
+
+#[tokio::test]
+async fn multipart_handler_streams_and_documents_same_input() {
     let routes = Router::<()>::new()
-        .post(
-            "/files",
-            Endpoint::handler(|| async { NoContent }, operation),
-        )
+        .post("/files", upload_endpoint())
         .unwrap();
     let document: Value = serde_json::from_str(&generate(&routes, "Files", "1").unwrap()).unwrap();
     assert_eq!(
         document["paths"]["/files"]["post"]["requestBody"]["content"]["multipart/form-data"]["schema"]
             ["properties"]["file"]["format"],
         "binary"
+    );
+    let app = routes.with_state(());
+    let response = app.clone().oneshot(
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/files")
+            .header("content-type", "multipart/form-data; boundary=test")
+            .body(axum::body::Body::from("--test\r\nContent-Disposition: form-data; name=\"file\"; filename=\"file.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--test--\r\n"))
+            .unwrap(),
+    ).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["data"], 5);
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/files")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 415);
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["error"]["code"],
+        "invalid_multipart"
     );
 }
 
