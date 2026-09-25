@@ -5,8 +5,29 @@ use std::marker::PhantomData;
 use kouga_db::{Acquire, DbError, DbErrorKind, Postgres, QueryBuilder, Transaction};
 use sqlx::{Encode, FromRow, Type, postgres::PgRow};
 
+pub use kouga_core as core;
+pub use kouga_db as db;
 pub use kouga_db::Db;
-pub use sqlx::types::Uuid;
+/// Derive a DB model from named fields. The table name is explicit; UUID `id` is required.
+///
+/// ```compile_fail
+/// #[derive(kouga_model::Model)]
+/// #[model(table = "items")]
+/// struct WrongId { id: i32 }
+/// ```
+///
+/// `crud_visibility = "private"` keeps generated CRUD inside the model's module.
+/// ```compile_fail
+/// mod domain {
+///     #[derive(kouga_model::Model)]
+///     #[model(table = "secrets", crud_visibility = "private")]
+///     pub struct Secret { pub id: kouga_model::Uuid, pub name: String }
+/// }
+/// let _ = domain::Secret::query();
+/// ```
+pub use kouga_model_derive::Model;
+pub use sqlx;
+pub use uuid::Uuid;
 
 /// Implement for application enum/newtype columns; nullable `Option<T>` is deliberately excluded.
 pub trait Comparable: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static {}

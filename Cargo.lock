@@ -1007,9 +1007,23 @@ dependencies = [
 name = "kouga-model"
 version = "0.1.0"
 dependencies = [
+ "kouga-core",
  "kouga-db",
+ "kouga-model-derive",
+ "serde_json",
  "sqlx",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "kouga-model-derive"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]
