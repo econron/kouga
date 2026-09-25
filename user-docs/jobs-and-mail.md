@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。`#[kouga_job::job]`による宣言と`kouga_queue::Enqueue`によるDB投入は実装済みです。generator、handlerの登録、メールAPI、ワンショットのオプションは設計案です。
+> ドキュメント・プレビュー。`#[kouga_job::job]`による宣言、`kouga_queue::Enqueue`によるDB投入、`kouga-mailer`のメールAPIは実装済みです。generator、handlerの登録、ワンショットのオプションは設計案です。
 
 リクエスト内で完了する必要のないメール送信や集計は、ジョブとして登録します。HTTPは応答を返し、workerが後から処理します。
 
@@ -71,6 +71,23 @@ kouga generate mailer Welcome
 ```
 
 worker側に、mailerとテキスト・HTMLのテンプレートを生成します。SMTP接続先や認証情報はworkerの実行環境へ設定します。開発・テストでは外部送信せず、生成したメールを確認できます。
+
+現在使えるメールAPIは次の形です。テンプレートの変数は`render_html`でエスケープします。SMTPが必要なのはworkerバイナリだけです。
+
+```rust
+use kouga_mailer::{MailMessage, MemoryMailer, render_html};
+
+let html = render_html("<p>こんにちは、{{ name }}さん</p>", &user)?;
+let mail = MailMessage::new("hello@example.com", &user.email, "ようこそ", "ご登録ありがとうございます")?
+    .html(html);
+mail.deliver(&state.mailer).await?;
+
+// テスト・開発環境では MemoryMailer を使い、SMTPなしで内容を確認できます。
+let recorded = memory_mailer.recorded();
+assert_eq!(recorded[0].subject(), "ようこそ");
+```
+
+本番では`SmtpMailer::relay(host, port, credentials)`または`starttls`を使い、TLS・証明書検証を必須にします。`insecure_local(port)`はローカルの開発用SMTPシンク専用です。SMTPの結果が不明な場合、ジョブ再試行で重複送信される可能性があります。
 
 handlerの案です。
 

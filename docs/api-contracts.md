@@ -281,6 +281,8 @@ JobErrorはRetryable/Permanent、基盤障害のsourceは内部保持。queueは
 
 mailerはlettreのMessage/SMTPを再利用し、MiniJinjaはHTML autoescapeを有効にする。生成したWelcome等はアプリのworker内に配置する。メモリ送信は同じMailMessageを記録する。mailerから自動で独自ジョブを生成せず、通常のJob handlerがdeliverを呼ぶ。
 
+T22の`kouga-mailer`公開APIは`MailMessage::new(from, to, subject, text)`、`html`、`attach(filename, ContentType, bytes)`、`deliver(&impl Mailer)`。`render_html(template, context)`はMiniJinjaで常にHTMLエスケープする。`SmtpMailer::relay`/`starttls`はTLSと証明書検証が必須で、平文は開発用`insecure_local(port)`のみ。`MemoryMailer::recorded()`で送信内容を外部送信なしに検査できる。HTTPからはmailer crateを参照せず、ジョブpayloadとqueueだけをリンクする。メール生成・送信はworkerのhandler内で行う。
+
 ## 10. 設定・起動・計測（T03の入口）
 
 `Config::load(root, Environment) -> Result<Config, ConfigError>`は既定→`config/base.toml`→`config/{environment}.toml`→環境変数の順に上書きする。`KOUGA_ENV`はdevelopment/test/production、既定development。未知キー、0上限、矛盾する設定は起動エラー。DATABASE_URL/同_FILEと秘密値の両指定は拒否。Secret<T>はDebug/Displayで秘匿し、明示的なexposeのみ許す。
