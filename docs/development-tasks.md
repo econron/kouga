@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T15・T17・T18・T20〜T24・T26・T28統合済み。T16・T25・T27は作業中
+状態: T00〜T18・T20〜T24・T26・T28統合済み。T19・T25・T27は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -55,10 +55,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T13 | association・preload | T12 | 完了 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 完了 |
 | T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
-| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | レビュー待ち |
+| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 完了 |
 | T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 完了 |
-| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
+| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 作業中 |
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
@@ -431,7 +431,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T16 — model・resource・Requestのgenerator
 
-- 状態: レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T16-resource-generator`
 - worktree: `.worktrees/T16-resource-generator`
@@ -494,10 +494,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T19 — 認証API・リセット・auth生成
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: Codex
 - ブランチ: `task/T19-auth-api`
-- worktree: `.worktrees/T19-auth-api`（作成前）
+- worktree: `.worktrees/T19-auth-api`
 - 依存: T18、T21、T22、T23、T16
 - 対応仕様: 4.3、4.17
 - 主担当領域: 認証HTTP API・authテンプレート
