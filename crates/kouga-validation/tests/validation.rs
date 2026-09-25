@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 use std::task::{Context, Poll, Waker};
 
 use kouga_core::{Error, ErrorKind, Patch};
@@ -78,7 +78,9 @@ struct Input {
     fail_async: bool,
 }
 
-static ASYNC_CALLS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static ASYNC_CALLS: Cell<usize> = const { Cell::new(0) };
+}
 
 impl Request for Input {
     type Context = bool;
@@ -94,7 +96,7 @@ impl Request for Input {
         infrastructure_down: &'a Self::Context,
         errors: &'a mut ValidationErrors,
     ) -> Result<(), Error> {
-        ASYNC_CALLS.fetch_add(1, Ordering::SeqCst);
+        ASYNC_CALLS.with(|calls| calls.set(calls.get() + 1));
         if *infrastructure_down {
             return Err(Error::new(
                 ErrorKind::Unavailable,
@@ -111,7 +113,7 @@ impl Request for Input {
 
 #[test]
 fn sync_errors_skip_async_and_async_errors_are_validation() {
-    ASYNC_CALLS.store(0, Ordering::SeqCst);
+    ASYNC_CALLS.with(|calls| calls.set(0));
     let error = ready(validate(
         Input {
             fail_sync: true,
@@ -122,7 +124,7 @@ fn sync_errors_skip_async_and_async_errors_are_validation() {
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Validation);
     assert_eq!(error.details[0].field, "name");
-    assert_eq!(ASYNC_CALLS.load(Ordering::SeqCst), 0);
+    assert_eq!(ASYNC_CALLS.with(Cell::get), 0);
 
     let error = ready(validate(
         Input {
@@ -134,7 +136,7 @@ fn sync_errors_skip_async_and_async_errors_are_validation() {
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Validation);
     assert_eq!(error.details[0].code, "taken");
-    assert_eq!(ASYNC_CALLS.load(Ordering::SeqCst), 1);
+    assert_eq!(ASYNC_CALLS.with(Cell::get), 1);
 }
 
 #[test]
