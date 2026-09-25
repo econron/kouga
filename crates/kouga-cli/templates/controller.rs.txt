@@ -1,0 +1,96 @@
+use crate::models::MODEL_MOD::{MODEL_NAME, NewMODEL_NAME, UpdateMODEL_NAME};
+use crate::requests::PLURAL::{CreateMODEL_NAMERequest, UpdateMODEL_NAMERequest};
+use kouga_http::{Created, Error, Json, NoContent, Page, Path, Router, State, Validated, ValidatedQuery, endpoint};
+use kouga_model::{Db, Uuid};
+use kouga_validation::Request;
+use kouga_core::{Error as CoreError, ErrorKind};
+
+#[derive(serde::Serialize)]
+pub struct MODEL_NAMEOutput {
+    pub id: String,
+OUTPUT_FIELDS}
+
+impl schemars::JsonSchema for MODEL_NAMEOutput {
+    fn schema_name() -> std::borrow::Cow<'static, str> { "MODEL_NAMEOutput".into() }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::Schema::try_from(serde_json::json!({
+            "type": "object",
+            "required": [OUTPUT_SCHEMA_REQUIRED],
+            "properties": {"id": {"type": "string", "format": "uuid"}, OUTPUT_SCHEMA_PROPERTIES}
+        })).expect("generated output schema")
+    }
+}
+
+impl From<MODEL_NAME> for MODEL_NAMEOutput {
+    fn from(value: MODEL_NAME) -> Self {
+        Self {
+            id: value.id.to_string(),
+OUTPUT_CONVERSIONS        }
+    }
+}
+
+#[derive(Request)]
+pub struct ListQuery {
+    #[validate(range(min = 1, max = 1000000))]
+    pub page: Option<usize>,
+    #[validate(range(min = 1, max = 100))]
+    pub per_page: Option<usize>,
+}
+
+fn id(raw: &str) -> Result<Uuid, Error> {
+    Uuid::parse_str(raw).map_err(|_| Error(CoreError::new(ErrorKind::BadRequest, "invalid_id", "Invalid ID")))
+}
+
+fn not_found() -> Error {
+    Error(CoreError::new(ErrorKind::NotFound, "not_found", "Not found"))
+}
+
+#[endpoint(operation_id = "PLURAL.index")]
+pub async fn index(State(db): State<Db>, query: ValidatedQuery<ListQuery>) -> Result<Page<MODEL_NAMEOutput>, Error> {
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(20);
+    let result = MODEL_NAME::query()
+        .order_by(crate::models::MODEL_MOD::MODEL_MOD::columns::created_at.desc())
+        .order_by(crate::models::MODEL_MOD::MODEL_MOD::columns::id.asc())
+        .page(page as i64, per_page as i64).fetch(&db).await.map_err(|e| Error(e.into_core()))?;
+    Ok(Page { data: result.items.into_iter().map(Into::into).collect(), page, per_page, has_next: result.has_next })
+}
+
+#[endpoint(operation_id = "PLURAL.create")]
+pub async fn create(State(db): State<Db>, input: Validated<CreateMODEL_NAMERequest>) -> Result<Created<MODEL_NAMEOutput>, Error> {
+    let value = MODEL_NAME::create(&db, NewMODEL_NAME {
+CREATE_FIELDS    }).await.map_err(|e| Error(e.into_core()))?;
+    let location = format!("/PLURAL/{}", value.id);
+    Ok(Created::new(location, value.into()))
+}
+
+#[endpoint(operation_id = "PLURAL.show")]
+pub async fn show(State(db): State<Db>, Path(raw): Path<String>) -> Result<Json<MODEL_NAMEOutput>, Error> {
+    let value = MODEL_NAME::find(&db, id(&raw)?).await.map_err(|e| Error(e.into_core()))?.ok_or_else(not_found)?;
+    Ok(Json(value.into()))
+}
+
+#[endpoint(operation_id = "PLURAL.update")]
+pub async fn update(State(db): State<Db>, Path(raw): Path<String>, input: Validated<UpdateMODEL_NAMERequest>) -> Result<Json<MODEL_NAMEOutput>, Error> {
+    if EMPTY_CHECK {
+        return Err(Error(CoreError::new(ErrorKind::Validation, "validation_failed", "Input is empty")));
+    }
+    let value = MODEL_NAME::update(&db, id(&raw)?, UpdateMODEL_NAME {
+UPDATE_FIELDS        }).await.map_err(|e| Error(e.into_core()))?.ok_or_else(not_found)?;
+    Ok(Json(value.into()))
+}
+
+#[endpoint(operation_id = "PLURAL.destroy")]
+pub async fn destroy(State(db): State<Db>, Path(raw): Path<String>) -> Result<NoContent, Error> {
+    if !MODEL_NAME::delete(&db, id(&raw)?).await.map_err(|e| Error(e.into_core()))? { return Err(not_found()); }
+    Ok(NoContent)
+}
+
+pub fn routes(router: Router<Db>) -> Router<Db> {
+    router
+        .get("/PLURAL", index_endpoint()).expect("generated route")
+        .post("/PLURAL", create_endpoint()).expect("generated route")
+        .get("/PLURAL/{id}", show_endpoint()).expect("generated route")
+        .patch("/PLURAL/{id}", update_endpoint()).expect("generated route")
+        .delete("/PLURAL/{id}", destroy_endpoint()).expect("generated route")
+}

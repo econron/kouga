@@ -1,0 +1,43 @@
+use axum::{body::{Body, to_bytes}, http::{Request, StatusCode}};
+use kouga_test::{TestClient, TestDb};
+
+#[tokio::test]
+async fn resource_round_trip() {
+    if std::env::var("TEST_DATABASE_URL").is_err() { return; }
+    let db = TestDb::from_env("migrations").await.unwrap();
+    let client = TestClient::new(APP_CRATE::router().with_state(db.db().clone()));
+    let send = |method: &str, path: String, json: &'static str| {
+        let request = Request::builder().method(method).uri(path)
+            .header("content-type", "application/json")
+            .body(Body::from(json)).unwrap();
+        client.send(request)
+    };
+    let invalid = send("POST", "/PLURAL".into(), r#"INVALID_JSON"#).await;
+    assert_eq!(invalid.status(), StatusCode::INVALID_STATUS);
+    let created = send("POST", "/PLURAL".into(), r#"CREATE_JSON"#).await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let location = created.headers()["location"].to_str().unwrap().to_owned();
+    let bytes = to_bytes(created.into_body(), 1_000_000).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(body["data"]["id"].is_string());
+DEFAULT_ASSERTS
+    let shown = send("GET", location.clone(), "").await;
+    assert_eq!(shown.status(), StatusCode::OK);
+    let updated = send("PATCH", location.clone(), r#"PATCH_JSON"#).await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    let bytes = to_bytes(updated.into_body(), 1_000_000).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(r#"PATCH_JSON"#).unwrap();
+    for (field, value) in expected.as_object().unwrap() {
+        assert_eq!(&body["data"][field.as_str()], value);
+    }
+    let listed = send("GET", "/PLURAL?page=1&per_page=20".into(), "").await;
+    assert_eq!(listed.status(), StatusCode::OK);
+    let bytes = to_bytes(listed.into_body(), 1_000_000).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    let deleted = send("DELETE", location.clone(), "").await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    assert_eq!(send("GET", location, "").await.status(), StatusCode::NOT_FOUND);
+    db.close().await.unwrap();
+}

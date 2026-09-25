@@ -93,3 +93,83 @@ fn new_rejects_bad_names_and_never_overwrites_existing_files() {
     assert!(!root.join("grpc-api").exists());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn resource_generator_registers_routes_and_preserves_existing_files() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("kouga-resource-{}-{nonce}", std::process::id()));
+    let app = root.join("taskboard");
+    fs::create_dir(&root).unwrap();
+    let cli = env!("CARGO_BIN_EXE_kouga");
+    assert!(
+        Command::new(cli)
+            .args(["new", "taskboard", "--path"])
+            .arg(&app)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let generate = |fields: &[&str]| {
+        Command::new(cli)
+            .current_dir(&app)
+            .args(["generate", "resource", "Task"])
+            .args(fields)
+            .output()
+            .unwrap()
+    };
+    assert!(
+        Command::new(cli)
+            .current_dir(&app)
+            .args(["generate", "request", "Note", "body:string"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(app.join("src/requests/notes.rs").exists());
+    assert!(!generate(&["id:string"]).status.success());
+    assert!(!app.join("migrations").exists());
+    let lib = app.join("src/lib.rs");
+    let original = fs::read_to_string(&lib).unwrap();
+    fs::write(&lib, format!("// edited\n{original}")).unwrap();
+    assert!(!generate(&["title:string"]).status.success());
+    assert!(!app.join("migrations").exists());
+    assert!(fs::read_to_string(&lib).unwrap().starts_with("// edited"));
+    fs::write(&lib, original).unwrap();
+    assert!(
+        generate(&["title:string", "completed:bool=false"])
+            .status
+            .success()
+    );
+    let controller = app.join("src/controllers/tasks.rs");
+    let before = fs::read(&controller).unwrap();
+    assert!(
+        !generate(&["title:string", "completed:bool=false"])
+            .status
+            .success()
+    );
+    assert_eq!(fs::read(&controller).unwrap(), before);
+    assert!(
+        Command::new(cli)
+            .current_dir(&app)
+            .args(["generate", "resource", "Tag", "label:string"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        fs::read_to_string(app.join("src/lib.rs"))
+            .unwrap()
+            .contains("controllers::tasks::routes(router)")
+    );
+    assert!(
+        fs::read_to_string(app.join("src/lib.rs"))
+            .unwrap()
+            .contains("controllers::tags::routes(router)")
+    );
+    assert_eq!(fs::read_dir(app.join("migrations")).unwrap().count(), 4);
+    assert!(app.join("tests/tasks.rs").exists());
+    fs::remove_dir_all(root).unwrap();
+}

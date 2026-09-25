@@ -5,6 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod resource;
+
 #[derive(Parser)]
 #[command(name = "kouga", version, about = "Kouga application CLI")]
 struct Cli {
@@ -35,6 +37,31 @@ enum Commands {
         #[command(subcommand)]
         command: OpenapiCommand,
     },
+    /// Generate a DB-backed HTTP resource.
+    Generate {
+        #[command(subcommand)]
+        command: GenerateCommand,
+    },
+    /// Manage the generated application's database.
+    Db {
+        #[command(subcommand)]
+        command: DbCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum GenerateCommand {
+    Resource { name: String, fields: Vec<String> },
+    Model { name: String, fields: Vec<String> },
+    Request { name: String, fields: Vec<String> },
+    Migration { name: String },
+}
+
+#[derive(Subcommand)]
+enum DbCommand {
+    Create,
+    Migrate,
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -76,6 +103,15 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         }
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
+        Commands::Generate { command } => resource::generate(command)?,
+        Commands::Db { command } => {
+            check_app()?;
+            run_app(match command {
+                DbCommand::Create => "db-create",
+                DbCommand::Migrate => "db-migrate",
+                DbCommand::Status => "db-status",
+            })?;
+        }
     }
     Ok(())
 }
@@ -156,7 +192,7 @@ fn create(name: &str, destination: &Path) -> Result<(), Box<dyn Error>> {
     fs::write(
         destination.join("README.md"),
         format!(
-            "# {name}\n\nRun `kouga server`, inspect routes with `kouga routes`, and open `/docs` in development.\nGenerate `openapi.yml` with `kouga openapi generate`; verify it in CI with `kouga openapi check`.\nSet `KOUGA_ENV=production` to disable Docs and automatic file updates.\n\nThis preview uses a local path dependency on the Kouga checkout; keep it available when building.\n"
+            "# {name}\n\nRun `kouga server`, inspect routes with `kouga routes`, and open `/docs` in development.\nGenerate `openapi.yml` with `kouga openapi generate`; verify it in CI with `kouga openapi check`.\nFor a database-backed API, run `kouga generate resource Task title:string completed:bool=false`, set `DATABASE_URL`, then run `kouga db create` and `kouga db migrate` before `kouga server`.\nSet `TEST_DATABASE_URL` to a separate database when running generated tests.\nSet `KOUGA_ENV=production` to disable Docs and automatic file updates.\n\nThis preview uses a local path dependency on the Kouga checkout; keep it available when building.\n"
         ),
     )?;
     println!("Created {}", destination.display());

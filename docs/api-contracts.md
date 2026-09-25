@@ -70,6 +70,10 @@ Rust **1.94.0以上**、edition 2024、Cargo resolver 3を採用する。SQLx 0.
 | kouga-cli | T15/T16/T19/T29/T30 | CLIとtemplates。テンプレートは機能別ディレクトリ |
 
 T15時点のCLIは`kouga new <name> [--path <destination>]`、`kouga server [--api http]`、`kouga routes`のみ実装する。生成アプリは現段階ではローカルKouga checkoutをpath依存として参照する（未公開crateの配布方法は後続課題）。`--api grpc`や`db`/`generate`はT15で仮実装しない。
+
+T16で`kouga generate resource <PascalCase> field:type...`を追加。例は`Task title:string completed:bool=false`。初版のfield型は`string`、`bool`、`integer`/`int`、`bigint`で、既定値はbooleanだけ。生成先は単一crateの`src/models`・`src/requests`・`src/controllers`、`migrations`、`tests`。Resourceはmodel・SQL up/down・作成/更新Request・公開出力・5つのHTTP action・登録・隔離DBテストをまとめる。`generate model`はmodel/SQL、`generate request`はRequest型、`generate migration`はSQLひな形を生成する。`kouga db create|migrate|status`は生成アプリのDBバイナリを起動する。Resourceの登録時に未編集の標準`lib.rs`/`server.rs`だけDB対応へ切り替え、追加は登録マーカーへ挿入する。既存生成ファイルがあれば全体の書き込み前に拒否し、編集済み標準ファイルも上書きしない。個別Requestは専用モジュールへ自動登録する。
+
+初版の複数形は末尾`s`なら`es`、それ以外は`s`を付けるだけで、不規則変化は扱わない。複雑なschemaは通常のRust/SQLとして生成後に編集する。
 | kouga-test | T17 | HTTP/DB検証支援。http、migration |
 | kouga-auth | T18 | token照合・password・policy。db、runtime。HTTP専用関数はhttp側 |
 | kouga-job / kouga-job-derive | T20 | payload契約 / derive。serdeのみ、DB/workerなし |

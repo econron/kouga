@@ -1,0 +1,19 @@
+use kouga_http::{Endpoint, Json, Operation, Router};
+
+pub mod models;
+pub mod requests;
+pub mod controllers;
+
+pub fn router() -> Router<kouga_model::Db> {
+    let router = Router::new()
+        .get(
+            "/health",
+            Endpoint::handler(
+                || async { Json("ok") },
+                Operation::new("health.check").response::<Json<&str>>(),
+            ),
+        )
+        .expect("generated route is valid");
+    // kouga: resource routes
+    router
+}

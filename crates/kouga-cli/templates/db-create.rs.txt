@@ -1,0 +1,19 @@
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let url = std::env::var("DATABASE_URL")?;
+    let name = url.rsplit('/').next().unwrap_or("").split('?').next().unwrap_or("");
+    let target = kouga_migration::AdminTarget {
+        url: &url,
+        expected_database: name,
+        environment: if std::env::var("KOUGA_ENV").as_deref() == Ok("production") {
+            kouga_migration::Environment::Production
+        } else {
+            kouga_migration::Environment::Development
+        },
+        allow_destructive: false,
+        allow_production: false,
+    };
+    println!("Creating database {name}");
+    kouga_migration::create_database(&target).await?;
+    Ok(())
+}

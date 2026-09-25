@@ -55,7 +55,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T13 | association・preload | T12 | 完了 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 完了 |
 | T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
-| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 作業中 |
+| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | レビュー待ち |
 | T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 完了 |
 | T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
@@ -431,10 +431,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T16 — model・resource・Requestのgenerator
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T16-resource-generator`
-- worktree: `.worktrees/T16-resource-generator`（作成前）
+- worktree: `.worktrees/T16-resource-generator`
 - 依存: T06、T12、T14、T15、T17
 - 対応仕様: 4.17、4.18、利用者ガイド最初のAPI
 - 主担当領域: CRUD関連CLIサブコマンド・テンプレート
@@ -443,12 +443,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 利用者ガイドの最初のAPIを新規生成から実行でき、入力不正・PATCH・作成と更新を検証する。
-- [ ] 生成コードが通常のRustとして編集でき、ルートの安全な自動登録または差分提示を行う。
+- [x] 利用者ガイドの最初のAPIを新規生成から実行でき、入力不正・PATCH・作成と更新を検証する。
+- [x] 生成コードが通常のRustとして編集でき、ルートの安全な自動登録または差分提示を行う。
 
 **今回含めないこと**: auth/jobなどの後続generator、編集済みコードの強制上書き。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: Resource生成はTask例で全target型チェックを通過。PostgreSQL 17の使い捨てDBで`kouga db create`→`db migrate`→`db status`を実行し、別の`TEST_DATABASE_URL`を使った生成HTTPテストで不正入力422、作成201/DB既定値、GET、PATCH、一覧、DELETEを確認。`kouga openapi generate/check`は5操作、文字列最小長、UUID形式、201/204を出力して通過。Rust 1.94のworkspace fmt、clippy、全テストを通過（SMTPテストのみsandbox内のソケット拒否のため権限付きで再実行）。既存ファイル衝突・編集済みlibの保護、単独Request生成と連続Resource生成をCLIテストで確認。試験用PostgreSQLコンテナは停止・自動削除済み。初版field型はstring/bool/integer/bigint、boolean既定値のみ。HTTP/gRPC併用のgeneratorはT29、他機能generatorはT19/T30へ。
 
 ### T17 — テスト支援基盤
 

@@ -1,0 +1,9 @@
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let url = std::env::var("DATABASE_URL")?;
+    let db = kouga_model::db::connect(&url, 5, std::time::Duration::from_secs(5)).await?;
+    let set = kouga_migration::MigrationSet::load("migrations")?;
+    let count = kouga_migration::Migrator::new(db, set, kouga_migration::MigratorOptions::default()).migrate().await?;
+    println!("Applied {count} migration(s)");
+    Ok(())
+}

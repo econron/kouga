@@ -11,3 +11,5 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "=4.6.7", features = ["derive"] }
+kouga-migration = { path = "../kouga-migration" }
+chrono = { version = "=0.4.45", default-features = false, features = ["clock"] }
