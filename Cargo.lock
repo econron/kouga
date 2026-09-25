@@ -1059,6 +1059,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kouga-test"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "kouga-db",
+ "kouga-http",
+ "kouga-migration",
+ "sqlx",
+ "tokio",
+ "tower",
+ "uuid",
+]
+
+[[package]]
 name = "kouga-validation"
 version = "0.1.0"
 dependencies = [
@@ -2468,6 +2482,7 @@ version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
  "wasm-bindgen",
