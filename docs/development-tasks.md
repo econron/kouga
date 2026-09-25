@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T04・T07・T08統合済み
+状態: T00〜T04・T07・T08統合済み、T05・T09・T11・T20・T26レビュー待ち
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -44,13 +44,13 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T02 | Cargo workspace・最小CI | T01 | 完了 |
 | T03 | 設定・起動・通常ログ | T02 | 完了 |
 | T04 | DB接続・トランザクション・DBエラー | T03 | 完了 |
-| T05 | migrationの生成・適用・履歴 | T04 | 未着手 |
+| T05 | migrationの生成・適用・履歴 | T04 | レビュー待ち |
 | T06 | migrationの巻き戻し・復旧・管理操作 | T05 | 未着手 |
 | T07 | validationの基本型と実行 | T02 | 完了 |
 | T08 | Requestのderiveと検証メタデータ | T07 | 完了 |
-| T09 | HTTP router・controller・レスポンス | T03、T08 | 未着手 |
+| T09 | HTTP router・controller・レスポンス | T03、T08 | レビュー待ち |
 | T10 | middleware基盤と標準middleware | T09 | 未着手 |
-| T11 | modelのCRUD・query実行 | T04 | 未着手 |
+| T11 | modelのCRUD・query実行 | T04 | レビュー待ち |
 | T12 | modelのderive・属性型生成 | T11 | 未着手 |
 | T13 | association・preload | T12 | 未着手 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 未着手 |
@@ -59,13 +59,13 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T17 | テスト支援基盤 | T04、T05、T09 | 未着手 |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 未着手 |
 | T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
-| T20 | ジョブ契約・queue投入 | T04 | 未着手 |
+| T20 | ジョブ契約・queue投入 | T04 | レビュー待ち |
 | T21 | worker・retry・ワンショット | T20、T03 | 未着手 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 未着手 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | 未着手 |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 未着手 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
-| T26 | 計測基盤・OTel exporter | T03、T04 | 未着手 |
+| T26 | 計測基盤・OTel exporter | T03、T04 | レビュー待ち |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 未着手 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 未着手 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
@@ -196,10 +196,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T05 — migrationの生成・適用・履歴
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（main未統合）
+- 担当者: subagent
 - ブランチ: `task/T05-migration-core`
-- worktree: `.worktrees/T05-migration-core`（作成前）
+- worktree: `.worktrees/T05-migration-core`
 - 依存: T04
 - 対応仕様: 4.5.1、4.5.2
 - 主担当領域: migrationの適用runtime
@@ -208,12 +208,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 空DBから適用でき、重複version・改変・欠落・順序不整合を実行前に拒否する。
-- [ ] 同時適用で二重実行せず、DDLと履歴が同時commitされ、失敗したmigrationだけrollbackする。
+- [x] 空DBから適用でき、重複version・改変・欠落・順序不整合を実行前に拒否する。
+- [x] 同時適用で二重実行せず、DDLと履歴が同時commitされ、失敗したmigrationだけrollbackする。
 
 **今回含めないこと**: dirty修復・rollbackなどの管理操作、モデル差分による自動schema変更。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `a79ae10`、`2016baa`。`kouga-migration`でSQLファイル検出、14桁UTC version、SHA-256 checksum、履歴照合、session advisory lock、再照合、migrationごとのDDL/履歴同一tx、statusを追加。PostgreSQL 17で同時適用、二重防止、失敗時rollback、履歴改変/欠落/順序、lock timeoutを検証。Rust 1.94でfmt/clippy/workspace全テスト通過。非tx・rollback・repairはT06へ。テスト用コンテナは停止・自動削除済み。
 
 ### T06 — migrationの巻き戻し・復旧・管理操作
 
@@ -280,10 +280,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T09 — HTTP router・controller・レスポンス
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（main未統合）
+- 担当者: subagent
 - ブランチ: `task/T09-http-core`
-- worktree: `.worktrees/T09-http-core`（作成前）
+- worktree: `.worktrees/T09-http-core`
 - 依存: T03、T08
 - 対応仕様: 4.1、4.6、4.7、4.8
 - 主担当領域: HTTP runtime・router・抽出・応答
@@ -292,12 +292,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] ルート衝突・優先順位・404/405/HEAD/OPTIONSとパラメータ抽出を検証する。
-- [ ] 不正入力でcontrollerを実行せず、201/Location・204・一覧形式と情報を漏らさないエラー変換を確認する。
+- [x] ルート衝突・優先順位・404/405/HEAD/OPTIONSとパラメータ抽出を検証する。
+- [x] 不正入力でcontrollerを実行せず、201/Location・204・一覧形式と情報を漏らさないエラー変換を確認する。
 
 **今回含めないこと**: 業務controllerの自動生成、認証実装。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `c41b9fb`、`3883d2d`、`ab54a14`。axum経路、Validated JSON/Query、raw JSON深さ32、安全エラー、201/204/Page、handlerと同じ宣言のroute metadata生成を追加。独立レビューで検出したQuery検証抜けと無効path登録時panicを修正し、Path schema不一致も登録時に拒否。Rust 1.94でfmt/clippy/workspaceテスト通過。手動の低レベル`Endpoint::handler`ではhandlerと任意metadataの完全一致は保証せず、通常は`#[endpoint]`を使う。request ID/middlewareはT10、OpenAPI文書化はT14へ。
 
 ### T10 — middleware基盤と標準middleware
 
@@ -322,10 +322,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T11 — modelのCRUD・query実行
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（main未統合）
+- 担当者: subagent
 - ブランチ: `task/T11-model-query`
-- worktree: `.worktrees/T11-model-query`（作成前）
+- worktree: `.worktrees/T11-model-query`
 - 依存: T04
 - 対応仕様: 4.4.1、4.4.2、4.4.4
 - 主担当領域: model/query runtime
@@ -334,12 +334,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 作成・部分更新・未存在・削除・NULL・空IN・ページング・DB既定値を実DBで検証する。
-- [ ] bind、動的列の制限、制約エラー、行ロック・条件付き更新を検証する。部分取得と完全modelを混同しない。
+- [x] 作成・部分更新・未存在・削除・NULL・空IN・ページング・DB既定値を実DBで検証する。
+- [x] bind、動的列の制限、制約エラー、行ロック・条件付き更新を検証する。部分取得と完全modelを混同しない。
 
 **今回含めないこと**: derive、association、自動saveやdirty tracking。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `cf182e8`、`17318b2`。`kouga-model`へModel/Column/Predicate/Query/LockedQuery/PageQueryとCRUDを追加。SQL識別子を列allowlist、値をbindし、空IN、NULL、部分更新、DB既定値、制約、行ロック、条件付き更新、ページングをPostgreSQL 17で検証。Rust 1.94でfmt/clippy/workspaceテスト通過。UUID自動生成・属性deriveはT12へ。テスト用コンテナは停止済み。
 
 ### T12 — modelのderive・属性型生成
 
@@ -511,10 +511,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T20 — ジョブ契約・queue投入
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（main未統合）
+- 担当者: main agent
 - ブランチ: `task/T20-queue-producer`
-- worktree: `.worktrees/T20-queue-producer`（作成前）
+- worktree: `.worktrees/T20-queue-producer`
 - 依存: T04
 - 対応仕様: 4.10、3.2
 - 主担当領域: ジョブ契約・queue投入crate・queue schema
@@ -523,12 +523,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] HTTP側がworker・SMTPに依存せず投入でき、payload/versionを読み戻せる。
-- [ ] 業務更新とジョブ登録が同一txでcommit/rollbackされる。trace metadataの保存用接続口を用意する。
+- [x] HTTP側がworker・SMTPに依存せず投入でき、payload/versionを読み戻せる。
+- [x] 業務更新とジョブ登録が同一txでcommit/rollbackされる。trace metadataの保存用接続口を用意する。
 
 **今回含めないこと**: workerの実行・retry、メモリタスクによる永続queueの代替。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `1d0a675`、`b7eeef5`、`68beed3`、`68840ba`、`50b6217`。Job契約/属性macro、DB投入、遅延投入、trace metadata、queue SQL migrationを追加。即時時刻はDB基準、trace値は形式・サイズを検証。PostgreSQL 17でpayload/versionの読み戻しと業務行＋ジョブの同一tx commit/rollbackを確認し、同一DBで結合テストを2回連続通過。Rust 1.94でfmt/clippy/workspace全テスト通過。HTTPはworker/SMTPに依存しない。worker実行はT21、migrationのアプリへの自動組込は後続generatorへ。テスト用コンテナは停止・自動削除済み。
 
 ### T21 — worker・retry・ワンショット
 
@@ -637,10 +637,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T26 — 計測基盤・OTel exporter
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（main未統合）
+- 担当者: main agent
 - ブランチ: `task/T26-telemetry`
-- worktree: `.worktrees/T26-telemetry`（作成前）
+- worktree: `.worktrees/T26-telemetry`
 - 依存: T03、T04
 - 対応仕様: 4.15、4.15.1
 - 主担当領域: メトリクス・稼働状態・任意OTel統合
@@ -649,12 +649,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] trace/metrics/logs送信、各設定、redaction、sampling、標準出力との分離を検証する。
-- [ ] 未搭載の依存グラフ、readiness/liveness、収集先停止・上限・再取り込み防止・終了flushを確認する。
+- [x] trace/metrics/logs送信、各設定、redaction、sampling、標準出力との分離を検証する。
+- [x] 未搭載の依存グラフ、readiness/liveness、収集先停止・上限・再取り込み防止・終了flushを確認する。
 
 **今回含めないこと**: 可視化backendの内蔵、サービス横断の接続実装全体。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `b7d825c`、`7b810a5`。独立crateにOTel SDK 0.33/OTLP HTTP protobufを閉じ込め、traces/metrics/logs、設定・sampling、通常JSONログとの併用、endpointなし、終了時flushと独自providerの終了hookを追加。模擬Collectorで3 signal送信とCollector停止時の業務継続を確認。`kouga-runtime::Health`でliveness/readinessを分離し、PostgreSQL停止時にreadiness 503を実DBで確認。SDK内部のqueue上限・初回drop警告・終了時drop件数警告を有効化した。`kouga-runtime`の依存グラフにOTelがないこと、Rust 1.94のfmt/clippy/workspace全テスト通過を確認。SDKのdrop数は非公開で稼働中の件数APIは提供しない。HTTP health経路と標準HTTP/DB/ジョブ計測の接続はT10/T27へ。
 
 ### T27 — 処理間のtrace連携
 
