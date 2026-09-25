@@ -532,10 +532,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T21 — worker・retry・ワンショット
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 実装済み・レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T21-queue-worker`
-- worktree: `.worktrees/T21-queue-worker`（作成前）
+- worktree: `.worktrees/T21-queue-worker`
 - 依存: T20、T03
 - 対応仕様: 4.10、3.3
 - 主担当領域: queue実行crate・worker runtime
@@ -544,12 +544,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 複数worker・強制終了・lease再取得・旧workerの完了拒否・retry/dead/未知payloadを検証する。
-- [ ] 件数/時間/空queueの終了、待機中キャンセル、失敗表示・再投入、graceful shutdownを確認する。
+- [x] 複数worker・強制終了・lease再取得・旧workerの完了拒否・retry/dead/未知payloadを検証する。
+- [x] 件数/時間/空queueの終了、待機中キャンセル、失敗表示・再投入、graceful shutdownを確認する。
 
 **今回含めないこと**: SMTP処理、クラウドの起動スケジューラー。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-worker`を追加。`Worker::new/register/run_forever/run_once/cancel_waiting/failed/retry_failed`、`JobContext`、`WorkerOptions`、`JobError`を公開。T20 schemaに追加する失敗理由列・期限切れlease indexのSQL migrationを同梱した。PostgreSQL 17で複数worker、retry/dead、未知・不正payload隔離、強制終了後再取得、旧lease拒否、待機中取消、手動再投入、終了猶予を検証。Rust 1.94.0のfmt、clippy、実DBを使うworkspace全テスト通過。CLI、SMTP、クラウド起動は未実装。SIGTERM実信号と長期高負荷は未検証。
 
 ### T22 — mailer・SMTP・メールテスト支援
 
