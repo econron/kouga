@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/kouga-core", "crates/kouga-runtime", "crates/kouga-validation"]
+members = ["crates/kouga-core", "crates/kouga-runtime", "crates/kouga-validation", "crates/kouga-db"]
 resolver = "3"
 
 [workspace.package]
