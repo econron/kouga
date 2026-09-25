@@ -1,0 +1,18 @@
+[package]
+name = "kouga-http"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { version = "=0.8.9", default-features = false, features = ["json", "query", "tokio", "http1"] }
+http = "=1.5.0"
+kouga-core.workspace = true
+kouga-validation = { path = "../kouga-validation", features = ["axum"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { version = "=1.53.1", features = ["macros", "rt"] }
+tower = { version = "=0.5.3", features = ["util"] }
