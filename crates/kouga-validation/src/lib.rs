@@ -5,7 +5,116 @@ use std::ops::Deref;
 
 use kouga_core::{Error, ErrorDetail, ErrorKind};
 
+pub use kouga_request_derive::Request;
+pub use {kouga_core, schemars, serde, serde_json};
+
 pub const MAX_ERRORS: usize = 100;
+pub const MAX_NESTING_DEPTH: usize = 32;
+
+thread_local! {
+    static DECODE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// deriveのDeserializeが保持するguard。失敗時も深さを戻す。
+#[doc(hidden)]
+pub struct DecodeDepth;
+
+impl DecodeDepth {
+    pub fn enter() -> Option<Self> {
+        DECODE_DEPTH.with(|depth| {
+            if depth.get() >= MAX_NESTING_DEPTH {
+                None
+            } else {
+                depth.set(depth.get() + 1);
+                Some(Self)
+            }
+        })
+    }
+}
+
+impl Drop for DecodeDepth {
+    fn drop(&mut self) {
+        DECODE_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaDirection {
+    Input,
+    Output,
+}
+
+pub trait ApiSchema {
+    fn schema(
+        generator: &mut schemars::SchemaGenerator,
+        direction: SchemaDirection,
+    ) -> schemars::Schema;
+}
+
+/// Deriveが生成するネスト用接続口。通常のRequest利用者は`validate`だけを呼ぶ。
+#[doc(hidden)]
+pub trait DerivedRequest: Request {
+    fn validate_sync_nested(&self, errors: &mut ValidationErrors, path: &str, depth: usize);
+    fn validate_async_nested<'a>(
+        &'a self,
+        context: &'a Self::Context,
+        errors: &'a mut ValidationErrors,
+        path: &'a str,
+        depth: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>>;
+}
+
+#[doc(hidden)]
+pub fn join_path(base: &str, field: &str) -> String {
+    if base.is_empty() {
+        field.to_owned()
+    } else {
+        format!("{base}.{field}")
+    }
+}
+
+#[doc(hidden)]
+pub fn record_error(errors: &mut ValidationErrors, base: &str, mut error: ValidationError) {
+    error.field = if error.field.is_empty() {
+        base.to_owned()
+    } else {
+        join_path(base, &error.field)
+    };
+    errors.push(error);
+}
+
+#[doc(hidden)]
+pub fn record_async_error(
+    errors: &mut ValidationErrors,
+    base: &str,
+    error: Error,
+) -> Result<(), Error> {
+    if error.kind != ErrorKind::Validation {
+        return Err(error);
+    }
+    if error.details.is_empty() {
+        errors.push(ValidationError::new(error.code).at(base));
+    } else {
+        for detail in error.details {
+            record_error(
+                errors,
+                base,
+                ValidationError::new(detail.code).at(detail.field),
+            );
+        }
+    }
+    Ok(())
+}
+
+#[doc(hidden)]
+pub fn depth_error(errors: &mut ValidationErrors, path: &str, depth: usize) -> bool {
+    if depth > MAX_NESTING_DEPTH {
+        errors.push(ValidationError::new("too_deep").at(path));
+        true
+    } else {
+        false
+    }
+}
 
 /// 組み込みルールの実行時表現。T08のderiveは同じ値をschemaにも使う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

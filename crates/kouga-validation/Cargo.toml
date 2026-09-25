@@ -8,3 +8,10 @@ license.workspace = true
 [dependencies]
 kouga-core.workspace = true
 email_address = { version = "=0.2.9", default-features = false }
+kouga-request-derive = { path = "../kouga-request-derive" }
+schemars = { version = "=1.2.2", default-features = false, features = ["std"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { version = "=1.53.1", features = ["macros", "rt"] }
