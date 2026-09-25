@@ -13,6 +13,7 @@ use sqlx::{
     Executor,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 #[kouga_job::job(name = "t21_fast", version = 1, queue = "t21")]
@@ -322,30 +323,31 @@ async fn postgres_worker_lifecycle() {
     assert_eq!(status, "succeeded");
 
     let cancelled = Arc::new(AtomicUsize::new(0));
+    let entered = Arc::new(Notify::new());
     let mut graceful = Worker::new(db.clone(), cancelled.clone(), options()).unwrap();
     graceful
-        .register::<Slow>(|_: Slow, ctx: JobContext<AtomicUsize>| async move {
-            ctx.cancellation.cancelled().await;
-            ctx.state.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+        .register::<Slow>({
+            let entered = entered.clone();
+            move |_: Slow, ctx: JobContext<AtomicUsize>| {
+                let entered = entered.clone();
+                async move {
+                    assert!(!ctx.cancellation.is_cancelled());
+                    entered.notify_one();
+                    ctx.cancellation.cancelled().await;
+                    ctx.state.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
         })
         .unwrap();
-    let graceful_id = Slow.enqueue(&db).await.unwrap();
+    Slow.enqueue(&db).await.unwrap();
     let stop = CancellationToken::new();
     let stop_worker = stop.clone();
     let graceful_handle = tokio::spawn(async move { graceful.run_forever(stop_worker).await });
-    for _ in 0..50 {
-        let running: bool =
-            sqlx::query_scalar("SELECT status='running' FROM kouga_jobs WHERE id=$1")
-                .bind(graceful_id)
-                .fetch_one(&db)
-                .await
-                .unwrap();
-        if running {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    tokio::time::timeout(Duration::from_secs(1), entered.notified())
+        .await
+        .unwrap();
+    assert_eq!(cancelled.load(Ordering::SeqCst), 0);
     stop.cancel();
     assert_eq!(graceful_handle.await.unwrap().unwrap().succeeded, 1);
     assert_eq!(cancelled.load(Ordering::SeqCst), 1);
