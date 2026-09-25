@@ -1,0 +1,5 @@
+fn main() {
+    for operation in APP_CRATE::router().routes() {
+        println!("{:<7} {:<32} {}", operation.method, operation.path, operation.operation_id);
+    }
+}

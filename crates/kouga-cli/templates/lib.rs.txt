@@ -1,0 +1,13 @@
+use kouga_http::{Endpoint, Json, Operation, Router};
+
+pub fn router() -> Router<()> {
+    Router::new()
+        .get(
+            "/health",
+            Endpoint::handler(
+                || async { Json("ok") },
+                Operation::new("health.check").response::<Json<&str>>(),
+            ),
+        )
+        .expect("generated route is valid")
+}
