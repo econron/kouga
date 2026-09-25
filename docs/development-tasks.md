@@ -320,7 +320,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **公開API**: `Router::middleware`、`Router::group(...).middleware(...).finish()`、`Endpoint::middleware`、`bearer_auth`、`HttpOptions`/`Router::configure`、`HttpRequest<S>`/`Next<S>`、`RequestId`/`ClientIp` extensions。共有rate-limit storeは対象外だが通常middlewareで429等を実装可能。
 
-**検証結果・後続への引き継ぎ**: HTTP結合テスト6件でglobal/group/route順、短絡とvalidation順、extensions、CORS、共通エラー/request ID、timeout、Content-Length有無の413、trusted proxy、ストリーム中の同時実行枠を検証。アクセスログは`tracing::info!`でrequest ID・method・path・status・duration・client IPのみ出力し、query/ヘッダーを含めない（出力捕捉の自動テストは未実施）。Rust 1.94のfmt/clippy/workspace testを実行。ローカルポートが必要な既存OTLPテストだけsandboxで失敗したため、workspace testを許可済み環境で再実行して全件通過。実TCP/ブラウザ越しのCORS確認および共有rate-limit storeは未検証・対象外。
+**検証結果・後続への引き継ぎ**: HTTP結合テスト6件でglobal/group/route順、短絡とvalidation順、extensions、CORS、共通エラー/request ID、timeout、Content-Length有無の413、trusted proxy、ストリーム中の同時実行枠を検証。追補で止まったbody streamの絶対期限・枠解放、および複数行`X-Forwarded-For`の信頼境界を再現テストで確認。アクセスログは`tracing::info!`でrequest ID・method・path・status・duration・client IPのみ出力し、query/ヘッダーを含めない（出力捕捉の自動テストは未実施）。Rust 1.94のfmt/clippy/workspace testを実行。ローカルポートが必要な既存OTLPテストだけsandboxで失敗したため、workspace testを許可済み環境で再実行して全件通過。実TCP/ブラウザ越しのCORS確認および共有rate-limit storeは未検証・対象外。
 
 ### T11 — modelのCRUD・query実行
 

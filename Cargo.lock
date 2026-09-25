@@ -950,7 +950,7 @@ dependencies = [
  "axum",
  "futures-util",
  "http",
- "http-body-util",
+ "http-body",
  "kouga-core",
  "kouga-http-derive",
  "kouga-validation",

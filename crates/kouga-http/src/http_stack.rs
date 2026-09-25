@@ -1,17 +1,19 @@
 use crate::{ClientIp, Error, HttpOptions, HttpRequest, Middleware, Next};
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Request};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::from_fn;
 use axum::response::{IntoResponse, Response};
 use futures_util::FutureExt;
-use http_body_util::BodyExt;
+use http_body::{Body as HttpBody, Frame, SizeHint};
 use kouga_core::{Error as CoreError, ErrorKind, RequestId};
 use std::net::{IpAddr, SocketAddr};
 use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::time::Instant;
-use tokio::sync::Semaphore;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
+use tokio::time::{Instant, Sleep};
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -52,21 +54,39 @@ where
                     ))
                     .into_response();
                 };
-                let response = match tokio::time::timeout(timeout, next.run(request)).await {
+                let deadline = Instant::now() + timeout;
+                let response = match tokio::time::timeout_at(deadline, next.run(request)).await {
                     Ok(response) => response,
-                    Err(_) => Error(CoreError::new(
-                        ErrorKind::Timeout,
-                        "timeout",
-                        "Request timed out",
-                    ))
-                    .into_response(),
+                    Err(_) => {
+                        return Error(CoreError::new(
+                            ErrorKind::Timeout,
+                            "timeout",
+                            "Request timed out",
+                        ))
+                        .into_response();
+                    }
                 };
                 let (parts, body) = response.into_parts();
-                let body = body.map_frame(move |frame| {
-                    let _ = &permit;
-                    frame
+                let (release, released) = oneshot::channel();
+                let permit = Arc::new(Mutex::new(Some(permit)));
+                let watchdog_permit = permit.clone();
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = tokio::time::sleep_until(deadline) => {},
+                        _ = released => {},
+                    }
+                    watchdog_permit.lock().expect("permit mutex").take();
                 });
-                Response::from_parts(parts, Body::new(body))
+                Response::from_parts(
+                    parts,
+                    Body::new(DeadlineBody {
+                        inner: Box::pin(body),
+                        sleep: Box::pin(tokio::time::sleep_until(deadline)),
+                        expired: false,
+                        permit,
+                        release: Some(release),
+                    }),
+                )
             }
         },
     ));
@@ -150,24 +170,88 @@ fn client_ip(request: &Request, trusted: &[IpAddr]) -> Option<IpAddr> {
     if !trusted.contains(&peer) {
         return Some(peer);
     }
-    let Some(forwarded) = request
+    let forwarded: Vec<_> = request
         .headers()
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-    else {
-        return Some(peer);
-    };
+        .get_all("x-forwarded-for")
+        .iter()
+        .collect();
     let mut selected = peer;
-    for part in forwarded.split(',').rev() {
-        let Ok(ip) = part.trim().parse() else {
+    for value in forwarded.into_iter().rev() {
+        let Ok(value) = value.to_str() else {
             return Some(peer);
         };
-        if !trusted.contains(&ip) {
-            return Some(ip);
+        for part in value.split(',').rev() {
+            let Ok(ip) = part.trim().parse() else {
+                return Some(peer);
+            };
+            if !trusted.contains(&ip) {
+                return Some(ip);
+            }
+            selected = ip;
         }
-        selected = ip;
     }
     Some(selected)
+}
+
+struct DeadlineBody {
+    inner: Pin<Box<Body>>,
+    sleep: Pin<Box<Sleep>>,
+    expired: bool,
+    permit: Arc<Mutex<Option<OwnedSemaphorePermit>>>,
+    release: Option<oneshot::Sender<()>>,
+}
+
+impl DeadlineBody {
+    fn release(&mut self) {
+        self.permit.lock().expect("permit mutex").take();
+        self.release.take();
+    }
+}
+
+impl Drop for DeadlineBody {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+impl HttpBody for DeadlineBody {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+        if self.expired {
+            return Poll::Ready(None);
+        }
+        if self.sleep.as_mut().poll(cx).is_ready() {
+            self.expired = true;
+            self.release();
+            return Poll::Ready(Some(Err(axum::Error::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "response body timed out",
+            )))));
+        }
+        match self.inner.as_mut().poll_frame(cx) {
+            Poll::Ready(None) => {
+                self.release();
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(Err(error))) => {
+                self.release();
+                Poll::Ready(Some(Err(error)))
+            }
+            result => result,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.expired || self.inner.is_end_stream()
+    }
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
 }
 
 fn replace_error_body(response: &mut Response, error: &CoreError, id: &RequestId) {

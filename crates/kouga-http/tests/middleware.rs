@@ -257,6 +257,7 @@ async fn limits_timeout_and_trusted_proxy() {
     assert_eq!(slow.status(), StatusCode::GATEWAY_TIMEOUT);
     let mut request = Request::builder()
         .uri("/ip")
+        .header("x-forwarded-for", "198.51.100.4")
         .header("x-forwarded-for", "203.0.113.9, 127.0.0.1")
         .body(Body::empty())
         .unwrap();
@@ -272,11 +273,12 @@ async fn limits_timeout_and_trusted_proxy() {
 }
 
 #[tokio::test]
-async fn streaming_response_keeps_inflight_slot_until_body_is_dropped() {
+async fn streaming_response_has_absolute_deadline_and_releases_slot() {
     let gate = Arc::new(Notify::new());
     let router = Router::<()>::new()
         .configure(HttpOptions {
             max_in_flight: 1,
+            timeout: Duration::from_millis(40),
             ..HttpOptions::default()
         })
         .unwrap()
@@ -325,8 +327,9 @@ async fn streaming_response_keeps_inflight_slot_until_body_is_dropped() {
         .unwrap();
     assert_eq!(overloaded.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(json(overloaded).await["error"]["code"], "overloaded");
-    drop(response);
+    tokio::time::sleep(Duration::from_millis(80)).await;
     let next = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/stream")
@@ -336,6 +339,26 @@ async fn streaming_response_keeps_inflight_slot_until_body_is_dropped() {
         .await
         .unwrap();
     assert_eq!(next.status(), StatusCode::OK);
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(20),
+            to_bytes(response.into_body(), 1024)
+        )
+        .await
+        .unwrap()
+        .is_err()
+    );
+    drop(next);
+    let after_drop = app
+        .oneshot(
+            Request::builder()
+                .uri("/stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(after_drop.status(), StatusCode::OK);
 }
 
 #[tokio::test]
