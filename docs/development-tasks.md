@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T04・T07・T08統合済み、T05・T09・T11・T20・T26レビュー待ち
+状態: T00〜T05・T07〜T09・T11・T20・T26統合済み
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -44,13 +44,13 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T02 | Cargo workspace・最小CI | T01 | 完了 |
 | T03 | 設定・起動・通常ログ | T02 | 完了 |
 | T04 | DB接続・トランザクション・DBエラー | T03 | 完了 |
-| T05 | migrationの生成・適用・履歴 | T04 | レビュー待ち |
+| T05 | migrationの生成・適用・履歴 | T04 | 完了 |
 | T06 | migrationの巻き戻し・復旧・管理操作 | T05 | 未着手 |
 | T07 | validationの基本型と実行 | T02 | 完了 |
 | T08 | Requestのderiveと検証メタデータ | T07 | 完了 |
-| T09 | HTTP router・controller・レスポンス | T03、T08 | レビュー待ち |
+| T09 | HTTP router・controller・レスポンス | T03、T08 | 完了 |
 | T10 | middleware基盤と標準middleware | T09 | 未着手 |
-| T11 | modelのCRUD・query実行 | T04 | レビュー待ち |
+| T11 | modelのCRUD・query実行 | T04 | 完了 |
 | T12 | modelのderive・属性型生成 | T11 | 未着手 |
 | T13 | association・preload | T12 | 未着手 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 未着手 |
@@ -59,13 +59,13 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T17 | テスト支援基盤 | T04、T05、T09 | 未着手 |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 未着手 |
 | T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
-| T20 | ジョブ契約・queue投入 | T04 | レビュー待ち |
+| T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 未着手 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 未着手 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | 未着手 |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 未着手 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
-| T26 | 計測基盤・OTel exporter | T03、T04 | レビュー待ち |
+| T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 未着手 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 未着手 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
@@ -196,7 +196,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T05 — migrationの生成・適用・履歴
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: subagent
 - ブランチ: `task/T05-migration-core`
 - worktree: `.worktrees/T05-migration-core`
@@ -280,7 +280,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T09 — HTTP router・controller・レスポンス
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: subagent
 - ブランチ: `task/T09-http-core`
 - worktree: `.worktrees/T09-http-core`
@@ -322,7 +322,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T11 — modelのCRUD・query実行
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: subagent
 - ブランチ: `task/T11-model-query`
 - worktree: `.worktrees/T11-model-query`
@@ -511,7 +511,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T20 — ジョブ契約・queue投入
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: main agent
 - ブランチ: `task/T20-queue-producer`
 - worktree: `.worktrees/T20-queue-producer`
@@ -637,7 +637,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T26 — 計測基盤・OTel exporter
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: main agent
 - ブランチ: `task/T26-telemetry`
 - worktree: `.worktrees/T26-telemetry`
