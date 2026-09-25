@@ -18,7 +18,13 @@ async fn enqueue_reads_back_and_respects_transaction() {
     let db = kouga_db::connect(&url, 2, Duration::from_secs(2))
         .await
         .unwrap();
-    sqlx::raw_sql(SCHEMA_SQL).execute(&db).await.unwrap();
+    let schema_exists: bool = sqlx::query_scalar("SELECT to_regclass('kouga_jobs') IS NOT NULL")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    if !schema_exists {
+        sqlx::raw_sql(SCHEMA_SQL).execute(&db).await.unwrap();
+    }
 
     let at = Utc::now() + ChronoDuration::hours(1);
     let mut tx = db.begin().await.unwrap();
