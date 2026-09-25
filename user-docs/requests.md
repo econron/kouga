@@ -59,6 +59,7 @@ pub title: String,
 ## controllerでは、処理を書く
 
 ```rust
+#[kouga_http::endpoint(operation_id = "tasks.create")]
 pub async fn create(
     state: State<AppState>,
     input: Validated<CreateTaskRequest>,
@@ -75,9 +76,20 @@ pub async fn create(
 }
 ```
 
+ルート登録時に同じ定義から実行handlerとschemaメタデータを保持します。
+
+```rust
+let router = Router::<AppState>::new()
+    .post("/tasks", create_endpoint())?;
+// router.routes() は state なしで登録済み Operation を返す。
+// 配信時に router.with_state(state) を呼ぶ。
+```
+
 この抜粋ではtitleだけを保存し、completedはfalseに固定しています。`NewTask`はmodel側の作成属性、`TaskResponse`は公開する出力型です。`Created`は201とLocation、`data`形式の本文を返します。
 
 `Validated<T>`を引数に指定すると、検証は呼び出し前に実行されます。controllerに`validate()`や検証エラー用の分岐は書きません。`Validated<T>`は検証済みの値を読み取るための型で、内側を変更することはできません。
+
+クエリも`#[derive(Request)]`した型を`ValidatedQuery<T>`で受けます。型変換失敗は400、検証ルール違反は422となり、controllerは呼ばれません。`Query<T>`を直接使うendpointは登録対象外です。パス変数は`/tasks/{id}`と書き、`Path<T>`と個数・名前を合わせます。無効なパスは登録時にエラーになります。
 
 ## 更新は「省略」と「消す」を区別する
 

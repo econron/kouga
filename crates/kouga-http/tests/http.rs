@@ -2,8 +2,8 @@ use axum::body::{Body, to_bytes};
 use http::{Method, Request as HttpRequest, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
 use kouga_http::{
-    Created, Endpoint, Error, Json, NoContent, Operation, Page, Path, Query, Router, Validated,
-    endpoint,
+    Created, Endpoint, Error, Json, NoContent, Operation, Page, Path, Router, Validated,
+    ValidatedQuery, endpoint,
 };
 use kouga_validation::Request;
 use kouga_validation::axum::ContextFromRequest;
@@ -47,11 +47,15 @@ async fn create_task(input: Validated<Input>) -> Result<Created<String>, Error> 
 
 #[derive(Request)]
 struct Search {
+    #[validate(range(min = 1))]
     page: usize,
 }
 
+static QUERY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
 #[endpoint(operation_id = "tasks.search")]
-async fn search_task(Path(id): Path<String>, Query(query): Query<Search>) -> Json<String> {
+async fn search_task(Path(id): Path<String>, query: ValidatedQuery<Search>) -> Json<String> {
+    QUERY_CALLS.fetch_add(1, Ordering::SeqCst);
     Json(format!("{id}:{}", query.page))
 }
 
@@ -67,7 +71,9 @@ async fn routes_and_responses() {
             "/tasks/{id}",
             Endpoint::handler(
                 |Path(id): Path<String>| async move { Json(id) },
-                Operation::new("tasks.show").response::<Json<String>>(),
+                Operation::new("tasks.show")
+                    .path_input::<String>()
+                    .response::<Json<String>>(),
             ),
         )
         .unwrap()
@@ -90,8 +96,10 @@ async fn routes_and_responses() {
         .delete(
             "/tasks/{id}",
             Endpoint::handler(
-                || async { NoContent },
-                Operation::new("tasks.delete").response::<NoContent>(),
+                |Path(_): Path<String>| async { NoContent },
+                Operation::new("tasks.delete")
+                    .path_input::<String>()
+                    .response::<NoContent>(),
             ),
         )
         .unwrap();
@@ -212,16 +220,89 @@ async fn routes_and_responses() {
             .get(
                 "/a/{id}",
                 Endpoint::handler(
-                    || async { NoContent },
-                    Operation::new("a.show").response::<NoContent>()
+                    |Path(_): Path<String>| async { NoContent },
+                    Operation::new("a.show")
+                        .path_input::<String>()
+                        .response::<NoContent>()
                 )
             )
             .unwrap()
             .get(
                 "/a/{name}",
                 Endpoint::handler(
+                    |Path(_): Path<String>| async { NoContent },
+                    Operation::new("a.other")
+                        .path_input::<String>()
+                        .response::<NoContent>()
+                )
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn invalid_routes_fail_during_registration() {
+    for path in ["/:id", "/tasks/{id", "/tasks/{*rest}", "/tasks/{id}/{id}"] {
+        assert!(
+            Router::<()>::new()
+                .get(
+                    path,
+                    Endpoint::handler(
+                        |Path(_): Path<String>| async { NoContent },
+                        Operation::new("bad")
+                            .path_input::<String>()
+                            .response::<NoContent>()
+                    )
+                )
+                .is_err()
+        );
+    }
+    assert!(
+        Router::<()>::new()
+            .get(
+                "/tasks/{id}",
+                Endpoint::handler(
                     || async { NoContent },
-                    Operation::new("a.other").response::<NoContent>()
+                    Operation::new("missing_path_input").response::<NoContent>()
+                )
+            )
+            .is_err()
+    );
+    assert!(
+        Router::<()>::new()
+            .get(
+                "/tasks/{id}/{other}",
+                Endpoint::handler(
+                    |Path(_): Path<String>| async { NoContent },
+                    Operation::new("wrong_arity")
+                        .path_input::<String>()
+                        .response::<NoContent>()
+                )
+            )
+            .is_err()
+    );
+    assert!(
+        Router::<()>::new()
+            .get(
+                "/tasks",
+                Endpoint::handler(
+                    |Path(_): Path<String>| async { NoContent },
+                    Operation::new("unused_path_input")
+                        .path_input::<String>()
+                        .response::<NoContent>()
+                )
+            )
+            .is_err()
+    );
+    assert!(
+        Router::<()>::new()
+            .get(
+                "/tasks/{id}",
+                Endpoint::handler(
+                    |Path(_): Path<(String, String)>| async { NoContent },
+                    Operation::new("tuple_mismatch")
+                        .path_input::<(String, String)>()
+                        .response::<NoContent>()
                 )
             )
             .is_err()
@@ -407,6 +488,7 @@ async fn endpoint_metadata_matches_registered_handler() {
     assert_eq!(response.status(), StatusCode::CREATED);
     assert_eq!(body(response).await["data"], "ok");
     let response = app
+        .clone()
         .oneshot(
             HttpRequest::builder()
                 .uri("/tasks/42?page=2")
@@ -416,4 +498,26 @@ async fn endpoint_metadata_matches_registered_handler() {
         .await
         .unwrap();
     assert_eq!(body(response).await["data"], "42:2");
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/tasks/42?page=0")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let response = app
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/tasks/42?page=nope")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(QUERY_CALLS.load(Ordering::SeqCst), 1);
 }

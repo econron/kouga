@@ -5,9 +5,10 @@ use http::{HeaderValue, StatusCode, header};
 use kouga_core::{Error as CoreError, ErrorKind};
 use serde::Serialize;
 
-pub use axum::extract::{Path, Query, State};
+pub use axum::extract::{Path, State};
 pub use kouga_http_derive::endpoint;
 pub use kouga_validation::Validated;
+pub use kouga_validation::axum::ValidatedQuery;
 mod endpoint;
 pub use endpoint::{ApiInput, ApiOutput, Endpoint, Operation, Parameter, ResponseMeta};
 pub mod router;

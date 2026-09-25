@@ -1,4 +1,4 @@
-use crate::{Created, Json, NoContent, Page, Path, Query, Validated};
+use crate::{Created, Json, NoContent, Page, Path, Validated, ValidatedQuery};
 use axum::handler::Handler;
 use axum::routing::{MethodRouter, delete, get, patch, post, put};
 use http::{Method, StatusCode};
@@ -109,7 +109,7 @@ impl<T: schemars::JsonSchema> ApiInput for Path<T> {
         operation.path_input::<T>()
     }
 }
-impl<T: ApiSchema> ApiInput for Query<T> {
+impl<T: kouga_validation::Request + ApiSchema> ApiInput for ValidatedQuery<T> {
     fn describe(operation: Operation) -> Operation {
         operation.query_input::<T>()
     }
@@ -181,6 +181,9 @@ pub struct Endpoint<S> {
 }
 
 impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
+    /// Generated adapters use this low-level constructor. Manually supplied metadata is not
+    /// checked against a handler's Rust signature; use `#[endpoint]` for normal registration.
+    #[doc(hidden)]
     pub fn handler<H, T>(handler: H, operation: Operation) -> Self
     where
         H: Handler<T, S> + Clone + Send + Sync + 'static,

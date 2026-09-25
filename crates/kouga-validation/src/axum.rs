@@ -1,12 +1,13 @@
 //! HTTP-only adapter; the validation core has no HTTP dependency.
 use crate::{MAX_NESTING_DEPTH, Request, Validated, validate};
-use axum::extract::{FromRequest, Json};
+use axum::extract::{FromRequest, FromRequestParts, Json, Query};
 use axum::http::{Request as HttpRequest, StatusCode, request::Parts};
 use axum::response::{IntoResponse, Response};
 use kouga_core::{Error, ErrorKind};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::future::Future;
+use std::ops::Deref;
 
 pub trait ContextFromRequest<S>: Sized {
     fn from_request(
@@ -53,6 +54,50 @@ fn too_deep(value: &Value, depth: usize) -> bool {
         Value::Array(values) => values.iter().any(|v| too_deep(v, depth + 1)),
         Value::Object(values) => values.values().any(|v| too_deep(v, depth + 1)),
         _ => false,
+    }
+}
+
+/// Query input that runs the same Request validation as JSON input.
+pub struct ValidatedQuery<T>(Validated<T>);
+
+impl<T> ValidatedQuery<T> {
+    pub fn into_inner(self) -> T {
+        self.0.into_inner()
+    }
+}
+
+impl<T> Deref for ValidatedQuery<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<S, T> FromRequestParts<S> for ValidatedQuery<T>
+where
+    S: Send + Sync,
+    T: Request + DeserializeOwned,
+    T::Context: ContextFromRequest<S>,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let context = T::Context::from_request(parts, state)
+            .await
+            .map_err(safe_error)?;
+        let Query(value) = Query::<T>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| {
+                safe_error(Error::new(
+                    ErrorKind::BadRequest,
+                    "invalid_query",
+                    "Invalid query parameters",
+                ))
+            })?;
+        validate(value, &context)
+            .await
+            .map(Self)
+            .map_err(safe_error)
     }
 }
 

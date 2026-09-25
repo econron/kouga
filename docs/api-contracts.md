@@ -148,6 +148,8 @@ schemaの公開接続口は`ApiSchema::schema(&mut SchemaGenerator, SchemaDirect
 
 HTTP routeはhandlerと`Operation`を一緒に保持する。Operationはmethod/path/operation_id/parameters/request_body/responses/security/summary/description/tags/deprecatedを持つ。引数extractorと戻り値に`ApiInput`/`ApiOutput`を実装し、endpoint macroが収集する。
 
+T09の登録APIは`Router::<S>::new().post(path, create_endpoint())?`。`#[endpoint]`は元の関数を残し、戻り値schema等を持つ`Endpoint<S>`を生成する。クエリは`ValidatedQuery<T>`（`T: Request`）を使い、`Query<T>`は検証を迂回するためendpoint引数にはしない。パスは`/{id}`形式のみを受け付け、`Path<T>`のschemaとルート変数の不一致を登録時に拒否する。`router.routes()`でstateなしに`Operation`を参照できる。現時点の`Json<T>`/`Created<T>`/`Page<T>`の内側には`schemars::JsonSchema`が必要。OpenAPI文書化・request ID・middlewareはT14/T10で接続する。
+
 ```rust,ignore
 #[kouga_http::endpoint(operation_id = "tasks.create")]
 pub async fn create(

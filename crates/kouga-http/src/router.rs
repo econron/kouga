@@ -27,22 +27,23 @@ where
     }
 
     fn add(mut self, path: &str, method: Method, endpoint: Endpoint<S>) -> Result<Self, Error> {
-        if !path.starts_with('/') {
+        let Some(parameters) = route_parameters(path) else {
             return Err(Error(CoreError::new(
                 ErrorKind::Internal,
                 "invalid_route",
-                "Route must begin with /",
+                "Invalid route path",
+            )));
+        };
+        if !path_schema_matches(&parameters, endpoint.operation.path_schema.as_ref()) {
+            return Err(Error(CoreError::new(
+                ErrorKind::Internal,
+                "invalid_route",
+                "Route parameters do not match Path input",
             )));
         }
         let canonical = |path: &str| {
             path.split('/')
-                .map(|part| {
-                    if part.starts_with('{') || part.starts_with(':') {
-                        "{}"
-                    } else {
-                        part
-                    }
-                })
+                .map(|part| if part.starts_with('{') { "{}" } else { part })
                 .collect::<Vec<_>>()
                 .join("/")
         };
@@ -154,5 +155,46 @@ where
                 ))
             })
             .with_state(state)
+    }
+}
+
+fn route_parameters(path: &str) -> Option<Vec<&str>> {
+    if !path.starts_with('/') {
+        return None;
+    }
+    let mut names = Vec::new();
+    for segment in path.split('/').skip(1) {
+        if let Some(name) = segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                || names.contains(&name)
+            {
+                return None;
+            }
+            names.push(name);
+        } else if segment.starts_with([':', '*']) || segment.contains(['{', '}']) {
+            return None;
+        }
+    }
+    Some(names)
+}
+
+fn path_schema_matches(parameters: &[&str], schema: Option<&serde_json::Value>) -> bool {
+    match (parameters.len(), schema) {
+        (0, None) => true,
+        (0, Some(_)) | (_, None) => false,
+        (count, Some(schema)) if schema["type"] == "object" => {
+            schema["properties"].as_object().is_some_and(|properties| {
+                properties.len() == count
+                    && parameters.iter().all(|name| properties.contains_key(*name))
+            })
+        }
+        (count, Some(schema)) if schema["type"] == "array" => schema["prefixItems"]
+            .as_array()
+            .is_some_and(|items| items.len() == count),
+        (1, Some(_)) => true,
+        _ => false,
     }
 }
