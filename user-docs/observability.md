@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。KougaのOTel統合、追加コマンド、標準計測は未実装の設計案です。`tracing`とOpenTelemetryは既存の仕組みを利用します。
+> ドキュメント・プレビュー。`kouga-telemetry`による任意のOTLP送信は実装済みです。`kouga add otel`、HTTP・DB・worker等の標準計測と相互のtrace接続は後続タスクです。
 
 最初は標準出力のログで十分です。サービスが増えて「このリクエストから、どのジョブが動いたのか」「どこで時間がかかったのか」を知りたくなったら、OpenTelemetryを追加できます。
 
@@ -44,7 +44,17 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 kouga server
 ```
 
-初版はOTLP/HTTP protobufで送る案です。endpoint未設定なら外部送信しません。endpointを設定すると、標準ではtracesとmetricsを送ります。Collectorは別途用意し、コンテナから送る場合はコンテナから到達できるアドレスを指定します。
+OTLP/HTTP protobufで送ります。endpoint未設定なら外部送信しません。endpointを設定すると、標準ではtracesとmetricsを送ります。Collectorは別途用意し、コンテナから送る場合はコンテナから到達できるアドレスを指定します。
+
+CLIによる追加ができるまでは、起動バイナリに`kouga-telemetry`を依存追加し、通常の`kouga_runtime::logging::init`の代わりに次を呼びます。両方を呼ぶと二重初期化エラーになります。
+
+```rust
+let telemetry = kouga_telemetry::Telemetry::init(
+    kouga_telemetry::TelemetryConfig::from_env()?,
+)?;
+// アプリを起動し、終了時に送信を待つ。
+telemetry.shutdown(std::time::Duration::from_secs(5)).await?;
+```
 
 workerは別のターミナル・環境で、別のサービス名にします。
 
@@ -92,7 +102,7 @@ async fn complete_task(db: &Db, id: Uuid) -> Result<(), Error> {
 
 ## ログもOTLPで送りたいとき
 
-標準出力のログは、そのまま使えます。有効なtrace contextがあるときはtrace_idとspan_idも付け、ログから処理の追跡につなげます。
+標準出力のログは、そのまま使えます。trace_idとspan_idを標準出力へ付ける統合は後続タスクです。現在はOTLPへ送ったspan/logで関連を確認できます。
 
 OTLPでログを直接送る場合は、明示的に有効化します。
 
@@ -104,7 +114,7 @@ export OTEL_LOGS_EXPORTER=otlp
 
 ## 出力や送り先を細かく変える
 
-標準設定で足りない場合は、起動処理で`tracing`のsubscriber/layerやOTelのproviderを構成できる拡張口を用意します。専用のloggerクラスを継承する方式にはしません。具体的な起動APIは設計中です。
+標準設定で足りない場合は、起動処理で`tracing`のsubscriber/layerやOTelのproviderを自分で構成できます。専用のloggerクラスを継承する方式にはしません。`Telemetry::init`は標準出力のJSONログとOTel送信をまとめて初期化し、すでにglobal subscriberがある場合はエラーを返します。独自providerの終了処理は`telemetry.on_shutdown(...)`へ登録できます。
 
 アプリ独自のメトリクスはOTelのmeter APIへ接続する方針です。ユーザーIDやtrace IDをメトリクスのラベルへ入れず、操作名・結果など種類の限られた項目を使います。
 
