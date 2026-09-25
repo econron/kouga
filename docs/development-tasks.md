@@ -217,10 +217,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T06 — migrationの巻き戻し・復旧・管理操作
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 管理API実装済み・CLI接続待ち・レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T06-migration-admin`
-- worktree: `.worktrees/T06-migration-admin`（作成前）
+- worktree: `.worktrees/T06-migration-admin`
 - 依存: T05
 - 対応仕様: 4.5.2、4.5.3
 - 主担当領域: migration管理API・管理用SQL実行
@@ -229,12 +229,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 不可逆な対象を含むrollbackは全件未変更で拒否し、非トランザクション中断から手動修復後に継続できる。
-- [ ] 破壊操作の明示許可、schema出力、seedを確認する。reset時の接続終了と排他も検証し、通常起動でmigrationしない。
+- [x] 不可逆な対象を含むrollbackは全件未変更で拒否し、非トランザクション中断から手動修復後に継続できる。
+- [x] 破壊操作の明示許可、schema出力、seedを確認する。reset時の接続終了と排他も検証し、通常起動でmigrationしない。
 
 **今回含めないこと**: クラウドのDB作成、バックアップ復元、自動的な破壊変更。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: rollback、非tx適用/down、dirty表示、理由必須のrepair監査に加え、`AdminTarget`による対象DB・環境・破壊許可の確認、DB作成/reset、`pg_dump`によるschema出力、seed callback、up SQLひな形生成を実装。PostgreSQL 17で通常reset、既存接続の終了、prepared transactionによるDROP失敗後の`ALLOW_CONNECTIONS`復旧、非tx失敗とrepairを検証。`pg_dump` 18.3からPostgreSQL 17へのschema-only出力で所有者・権限・データを含まないことを確認。Rust 1.94.0のfmt、clippy、実DB込みの全workspaceテストを通過。CLI自体はT15の`kouga-cli`へ統合後に`kouga db ...`へ配線する必要があり、このブランチでは未実装。実プロセス強制終了・DB接続断の途中復旧は未検証で、アクセス不可になった場合は管理DBから`ALTER DATABASE <name> WITH ALLOW_CONNECTIONS true`を行う。通常起動からmigrationは呼ばない。
 
 ### T07 — validationの基本型と実行
 

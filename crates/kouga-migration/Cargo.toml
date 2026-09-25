@@ -10,7 +10,9 @@ kouga-db = { path = "../kouga-db" }
 sqlx = { version = "=0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-native-roots"] }
 sha2 = "=0.10.9"
 chrono = "=0.4.45"
-tokio = { version = "=1.53.1", features = ["time"] }
+url = "=2.5.8"
+percent-encoding = "=2.3.2"
+tokio = { version = "=1.53.1", features = ["time", "rt"] }
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "time"] }
