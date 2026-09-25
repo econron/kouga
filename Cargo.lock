@@ -1357,6 +1357,7 @@ dependencies = [
  "kouga-core",
  "sqlx",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1368,6 +1369,7 @@ dependencies = [
  "kouga-core",
  "kouga-db",
  "kouga-model",
+ "kouga-telemetry",
  "kouga-test",
  "kouga-validation",
  "prost",
@@ -1393,6 +1395,7 @@ dependencies = [
  "kouga-core",
  "kouga-db",
  "kouga-http-derive",
+ "kouga-telemetry",
  "kouga-validation",
  "schemars",
  "serde",
@@ -1440,6 +1443,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1465,6 +1469,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -1501,9 +1506,11 @@ dependencies = [
  "chrono",
  "kouga-db",
  "kouga-job",
+ "kouga-telemetry",
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -1538,8 +1545,10 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk",
  "percent-encoding",
+ "prost",
  "sqlx",
  "tokio",
  "tracing",
@@ -1584,10 +1593,12 @@ dependencies = [
  "kouga-db",
  "kouga-job",
  "kouga-queue",
+ "kouga-telemetry",
  "serde_json",
  "sqlx",
  "tokio",
  "tokio-util",
+ "tracing",
  "uuid",
 ]
 

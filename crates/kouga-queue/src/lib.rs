@@ -103,6 +103,7 @@ pub trait Enqueue: Job {
         .await
     }
 
+    #[tracing::instrument(name = "kouga.queue.enqueue", skip_all, fields(job.kind = Self::NAME, job.queue = Self::QUEUE))]
     async fn enqueue_with<'c, A>(&self, db: A, options: EnqueueOptions) -> Result<Uuid, QueueError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -114,6 +115,13 @@ pub trait Enqueue: Job {
         }
         let version = i32::try_from(Self::VERSION)
             .map_err(|_| QueueError::InvalidContract("version exceeds PostgreSQL integer"))?;
+        #[cfg(feature = "otel")]
+        let mut options = options;
+        #[cfg(feature = "otel")]
+        if options.trace.traceparent.is_none() && options.trace.tracestate.is_none() {
+            (options.trace.traceparent, options.trace.tracestate) =
+                kouga_telemetry::propagation::capture();
+        }
         options.trace.validate()?;
         let payload = serde_json::to_value(self).map_err(QueueError::Serialize)?;
         let mut connection = db

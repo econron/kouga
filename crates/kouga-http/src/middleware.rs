@@ -25,6 +25,8 @@ pub struct HttpOptions {
     pub cors_origins: Vec<String>,
     pub cors_credentials: bool,
     pub trusted_proxies: Vec<IpAddr>,
+    /// Only these direct TCP peers may supply a distributed trace parent.
+    pub trusted_trace_peers: Vec<IpAddr>,
 }
 
 impl Default for HttpOptions {
@@ -36,6 +38,7 @@ impl Default for HttpOptions {
             cors_origins: Vec::new(),
             cors_credentials: false,
             trusted_proxies: Vec::new(),
+            trusted_trace_peers: Vec::new(),
         }
     }
 }

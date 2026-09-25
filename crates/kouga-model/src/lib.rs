@@ -402,6 +402,7 @@ impl<M: Model, R: Relation<M>> PreloadQuery<M, R> {
         self
     }
 
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "preload", db.table = M::TABLE))]
     pub async fn fetch_all<'c, A>(self, db: A) -> Result<Vec<Loaded<M, R::Related>>, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -418,6 +419,7 @@ impl<M: Model, R: Relation<M>> PreloadQuery<M, R> {
 }
 
 impl<M: Model, R: Relation<M>> PreloadPageQuery<M, R> {
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "preload_page", db.table = M::TABLE))]
     pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<Loaded<M, R::Related>>, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -811,6 +813,7 @@ impl<M: Model> Query<M> {
         Ok(builder)
     }
 
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "select", db.table = M::TABLE))]
     pub async fn fetch_all<'c, A>(self, db: A) -> Result<Vec<M>, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -846,6 +849,7 @@ impl<M: Model> Query<M> {
         }
     }
 
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "count", db.table = M::TABLE))]
     pub async fn count<'c, A>(mut self, db: A) -> Result<i64, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -862,6 +866,7 @@ impl<M: Model> Query<M> {
             .map_err(Into::into)
     }
 
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "exists", db.table = M::TABLE))]
     pub async fn exists<'c, A>(mut self, db: A) -> Result<bool, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -881,6 +886,7 @@ impl<M: Model> Query<M> {
 
 pub struct LockedQuery<M>(Query<M>);
 impl<M: Model> LockedQuery<M> {
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "select_for_update", db.table = M::TABLE))]
     pub async fn fetch_all(self, tx: &mut Transaction<'_>) -> Result<Vec<M>, DbError> {
         let mut query = self.0.build("SELECT * FROM ", false, true)?;
         query
@@ -904,6 +910,7 @@ pub struct PageResult<M> {
     pub has_next: bool,
 }
 impl<M: Model> PageQuery<M> {
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "page", db.table = M::TABLE))]
     pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<M>, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
@@ -943,6 +950,7 @@ where
         .await
 }
 
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "delete", db.table = M::TABLE))]
 pub async fn delete<'c, M: Model, A>(db: A, id: Uuid) -> Result<bool, DbError>
 where
     A: Acquire<'c, Database = Postgres> + Send,
@@ -995,6 +1003,7 @@ fn check_fields<M: Model>(fields: &[Field<M>]) -> Result<(), DbError> {
     Ok(())
 }
 
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "insert", db.table = M::TABLE))]
 pub async fn create<'c, M: Model, A>(db: A, id: Uuid, fields: Vec<Field<M>>) -> Result<M, DbError>
 where
     A: Acquire<'c, Database = Postgres> + Send,
@@ -1026,6 +1035,7 @@ where
         .map_err(Into::into)
 }
 
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "update", db.table = M::TABLE))]
 pub async fn update<'c, M: Model, A>(
     db: A,
     id: Uuid,

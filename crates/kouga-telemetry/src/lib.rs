@@ -8,6 +8,51 @@ use tracing_subscriber::{EnvFilter, Layer, prelude::*};
 
 pub use kouga_runtime::{Health, HealthStatus};
 
+pub mod propagation {
+    use opentelemetry::{propagation::TextMapPropagator, trace::TraceContextExt};
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    use std::collections::HashMap;
+    use tracing::Span;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    /// Only W3C trace context is accepted; baggage and application headers are never copied.
+    pub fn extract(parent: Option<&str>, state: Option<&str>, span: &Span) -> bool {
+        remote_context(parent, state).is_some_and(|context| span.set_parent(context).is_ok())
+    }
+
+    /// Record a link to the enqueue span; each worker attempt remains a separate root span.
+    pub fn link(parent: Option<&str>, state: Option<&str>, span: &Span) -> bool {
+        let Some(context) = remote_context(parent, state) else {
+            return false;
+        };
+        span.add_link(context.span().span_context().clone());
+        true
+    }
+
+    fn remote_context(parent: Option<&str>, state: Option<&str>) -> Option<opentelemetry::Context> {
+        let parent = parent.filter(|value| value.len() <= 55 && value.is_ascii())?;
+        let mut carrier = HashMap::from([("traceparent".to_owned(), parent.to_owned())]);
+        if let Some(state) = state.filter(|value| value.len() <= 512 && value.is_ascii()) {
+            carrier.insert("tracestate".to_owned(), state.to_owned());
+        }
+        let context = TraceContextPropagator::new().extract(&carrier);
+        context.span().span_context().is_valid().then_some(context)
+    }
+
+    /// Capture from the currently instrumented async task, without thread-local enter guards.
+    pub fn capture() -> (Option<String>, Option<String>) {
+        let context = Span::current().context();
+        let mut carrier = HashMap::new();
+        TraceContextPropagator::new().inject_context(&context, &mut carrier);
+        (
+            carrier.remove("traceparent"),
+            carrier
+                .remove("tracestate")
+                .filter(|state| !state.is_empty()),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sampling {
     AlwaysOn,

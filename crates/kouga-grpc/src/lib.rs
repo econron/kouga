@@ -8,6 +8,35 @@ use kouga_validation::{Request, Validated, validate};
 use std::{error::Error as StdError, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tonic::{Code, Status, metadata::MetadataMap};
+use tracing::Instrument;
+
+/// Wrap a generated handler after authenticating the transport peer. By default callers
+/// should pass `false`; forwarding headers never establish peer trust.
+pub async fn trace_request<T>(
+    metadata: &MetadataMap,
+    trusted_peer: bool,
+    work: impl Future<Output = T>,
+) -> T {
+    let span = tracing::info_span!("kouga.grpc.request");
+    #[cfg(feature = "otel")]
+    if trusted_peer
+        && metadata.get_all("traceparent").iter().count() == 1
+        && metadata.get_all("tracestate").iter().count() <= 1
+    {
+        kouga_telemetry::propagation::extract(
+            metadata
+                .get("traceparent")
+                .and_then(|value| value.to_str().ok()),
+            metadata
+                .get("tracestate")
+                .and_then(|value| value.to_str().ok()),
+            &span,
+        );
+    }
+    #[cfg(not(feature = "otel"))]
+    let _ = (metadata, trusted_peer);
+    work.instrument(span).await
+}
 
 /// Apply with `Server::builder().layer(tower::util::MapResponseLayer::new(...))`.
 /// Tonic 0.14 encodes an oversized incoming message as OUT_OF_RANGE before a handler runs;

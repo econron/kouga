@@ -324,6 +324,8 @@ runtime構築は同期mainで設定読込後に行い、Tokio multi_thread Build
 
 T26の`Telemetry::init(config)`はguardとproviderを保持し、`shutdown(deadline).await`を提供する。利用者providerも同じshutdown入口へ登録できる。SDK/exporterは独立crateだけに置く。OTEL_SERVICE_NAME/RESOURCE_ATTRIBUTES/EXPORTER_OTLP_ENDPOINT/HEADERS、TRACES_EXPORTER/METRICS_EXPORTER/LOGS_EXPORTER（otlp/none）、TRACES_SAMPLER（always_on/always_off/parentbased_traceidratio）とSAMPLER_ARGを初版対応とする。endpointなしでは送信なし、logsは明示有効化。OTLP/HTTP protobufのみ、queue metadataから各試行spanへlink、baggage既定無効。細かい送信上限はT26で追加してもT03の公開型を変更しない。
 
+T27ではHTTP/gRPC/queue/workerの`otel` featureが`kouga-telemetry`を任意追加する。HTTPは`HttpOptions::trusted_trace_peers`で直接TCP peerを明示したときだけtraceparent/tracestateを親として採用する。gRPCは生成handler内で`kouga_grpc::trace_request(metadata, trusted_peer, work)`を使う。queueは現在spanを既存のtrace metadata列へ自動保存し、workerは試行ごとの新規spanから投入spanへlinkする。`tracing` spanのasync伝播に`Instrument`を使い、workerバイナリは`run_once`後に`Telemetry::shutdown`を呼ぶ。生SQLや任意の外部HTTPクライアントは利用者が個別にspan/伝播を追加する。
+
 ## 11. gRPCと生成コード
 
 `.proto`→tonic-prost-build（build依存のみ）→`crates/rpc`。handlerはtonic生成service traitを実装し、`tonic::Request<rpc::Input>`からmetadata認証→業務入力へTryFrom→共有validate→業務関数の順に呼ぶ。非同期DB認証を同期interceptorへ押し込まず、handler wrapperでawaitする。
