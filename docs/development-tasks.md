@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00・T01完了・T02以降未着手
+状態: T00〜T02完了、T03以降未着手
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -41,7 +41,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 |---|---|---|---|
 | T00 | ローカルGit管理の開始 | なし | 完了 |
 | T01 | 利用者向けAPIと共通契約の確定 | T00 | 完了 |
-| T02 | Cargo workspace・最小CI | T01 | 未着手 |
+| T02 | Cargo workspace・最小CI | T01 | 完了 |
 | T03 | 設定・起動・通常ログ | T02 | 未着手 |
 | T04 | DB接続・トランザクション・DBエラー | T03 | 未着手 |
 | T05 | migrationの生成・適用・履歴 | T04 | 未着手 |
@@ -133,10 +133,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T02 — Cargo workspace・最小CI
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了
+- 担当者: Codex
 - ブランチ: `task/T02-workspace`
-- worktree: `.worktrees/T02-workspace`（作成前）
+- worktree: `.worktrees/T02-workspace`
 - 依存: T01
 - 対応仕様: 第3節、4.16、第5節
 - 主担当領域: workspace・共通ビルド設定・CI
@@ -145,12 +145,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] cargo fmt --check、clippy、testが実行でき、最低対応Rustでもビルドできる。
-- [ ] runtime/derive/CLIテンプレートの所有範囲と、HTTP/gRPC/workerの依存方向が確認できる。空の将来機能を大量に生成しない。
+- [x] cargo fmt --check、clippy、testが実行でき、最低対応Rustでもビルドできる。
+- [x] runtime/derive/CLIテンプレートの所有範囲と、HTTP/gRPC/workerの依存方向が確認できる。空の将来機能を大量に生成しない。
 
 **今回含めないこと**: クラウドへの公開、すべての機能のダミー実装。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: Rust 1.94.0と1.95.0で`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --locked`を通した。Cargo.lockを追跡し、CIも同じコマンドを1.94.0/stableで実行する。`kouga-core`にPatch/Error、`kouga-validation`にRequest/Validatedの公開型、`kouga-runtime`にT03用のcrate境界を用意。PATCHの3状態とValidatedの未検証構築拒否、Requestのtrait構文を試験。現在の依存はruntime→core、validation→coreのみ。deriveとCLI templatesは[共通API契約](api-contracts.md)の担当タスクで追加し、生成アプリの入口はそこで分離する。T03/T07はこのタスクをmainへ統合してから開始する。
 
 ### T03 — 設定・起動・通常ログ
 
