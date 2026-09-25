@@ -1279,7 +1279,9 @@ dependencies = [
 name = "kouga-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
+ "kouga-migration",
 ]
 
 [[package]]
