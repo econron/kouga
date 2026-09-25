@@ -46,6 +46,7 @@ Rust **1.94.0以上**、edition 2024、Cargo resolver 3を採用する。SQLx 0.
 - SQLxはdefault-featuresを切り、`postgres, runtime-tokio, tls-rustls-ring-native-roots, uuid, chrono, rust_decimal, json, derive`。動的SQLはQueryBuilderとbindを使う。コンパイル時のDB接続を必須にしない。
 - axumは必要なJSON/query/routing/server機能だけを有効にし、multipart/wsは追加機能。tower-httpのCORS等を再利用する。
 - OTel・SMTP・gRPC・storage・UIは必要な実行パッケージだけに追加する。tonic内部のaxumなど、共通の通信部品は許容する。「HTTP非依存」とはKougaのHTTP controller・schema/UIへの非依存であり、HTTP/2ライブラリまで排除する意味ではない。
+- T24 storageは`Storage::local(db, root)` / `Storage::s3(db, AmazonS3)`を共通入口とし、`save(Upload, Stream<Item = Result<Bytes, E>>)`で個別サイズ・実バイトの署名を検証する。`download(CurrentUser, id)`は認可済みストリーム、`signed_download_url`はS3のみ・最大15分。`attach`/`delete`/`cleanup`は`kouga_files`の状態で管理し、失敗した削除は清掃で再試行する。HTTP multipartのfieldをstreamとして渡すのはアプリ側のcontrollerが担当する。
 - Swagger UIはvendored素材を使い、実行時CDNを要求しない。OpenAPIの検証は公式3.1.1 schemaを固定してjsonschemaで行う。外部参照の自動取得は無効。素材の版・checksum・ライセンスはT14で記録する。
 
 ## 2. crateと所有範囲

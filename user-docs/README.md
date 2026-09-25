@@ -102,6 +102,7 @@ middleware → Requestの検証 → controller → model
 | CRUD・関連・トランザクションを使う | [Model](models.md) |
 | テーブルや列を変更する | [Migration](migrations.md) |
 | ログインが必要なAPIを作る | [認証とmiddleware](auth-and-middleware.md) |
+| 添付ファイルを保存・認可・清掃する | [ストレージ](storage.md) |
 | メールや時間のかかる処理を外へ出す | [ジョブとメール](jobs-and-mail.md) |
 | Dockerイメージを作る | [デプロイ](deployment.md) |
 | ログを追加し、HTTPからworkerまで追跡する | [ログとOpenTelemetry](observability.md) |
