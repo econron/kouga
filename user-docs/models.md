@@ -2,7 +2,24 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。以下は公開APIの設計案です。importや周辺の型定義を省いた抜粋です。
+> ドキュメント・プレビュー。以下の`#[derive(Model)]`と`Project::find/create/query`は後続T12の設計案です。T11では手動`Model`実装、`Column`/`Query`と`kouga_model::{find, create, update, delete}`を実装済みです。
+
+現時点の型付きqueryは次の形で使えます。列名は`Model::COLUMNS`の許可リストで照合され、値はSQLxでbindします。
+
+```rust
+#[derive(sqlx::FromRow)]
+struct Project { id: Uuid, name: String }
+
+impl kouga_model::Model for Project {
+    const TABLE: &'static str = "projects";
+    const COLUMNS: &'static [&'static str] = &["id", "name"];
+}
+
+let name = kouga_model::Column::<Project, String>::new("name");
+let rows = kouga_model::Query::<Project>::new()
+    .filter(name.eq("Kouga".to_owned()))
+    .fetch_all(&db).await?;
+```
 
 modelはDBのデータを表すRustのstructです。HTTPの入力ルールはRequestに置き、modelはcontrollerからもworkerからも使えます。
 
