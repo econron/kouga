@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T15・T17・T18・T20〜T23・T26統合済み。T16・T24・T25・T28は作業中
+状態: T00〜T15・T17・T18・T20〜T23・T26統合済み。T16・T25・T28は作業中、T24はレビュー待ち
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -63,7 +63,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | 完了 |
-| T24 | アップロード・ストレージ | T10、T18、T21 | 作業中（全テスト待ち） |
+| T24 | アップロード・ストレージ | T10、T18、T21 | レビュー待ち |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 作業中 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 未着手 |
@@ -599,7 +599,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T24 — アップロード・ストレージ
 
-- 状態: 作業中（全テスト待ち）
+- 状態: レビュー待ち
 - 担当者: Codex
 - ブランチ: `task/T24-storage`
 - worktree: `.worktrees/T24-storage`
@@ -616,7 +616,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: 画像変換、ウイルススキャン、ブラウザ直接アップロード。
 
-**検証結果・後続への引き継ぎ**: `kouga-storage`を追加。`Storage::local/s3/in_memory`、`save`、`attach`、`download`、`signed_download_url`、`delete`、`cleanup`を公開。`save`はバッファ上限付きでstreamを保存し、PNG/JPEG/PDFの先頭バイト・個別上限を検証。PostgreSQL 17と実ローカルFS、およびMoto 5.1.15のS3互換HTTPで11MiB multipart、保存・取得・削除・署名付きGET、所有者外の不可視化、途中失敗、削除失敗からの再試行を検証。S3の未完了multipartはbucket lifecycleで清掃する必要がある。HTTP multipartのfieldを渡すcontrollerと`kouga maintenance` CLIの呼び出しは後続タスク。Rust 1.94 fmt/clippyは通過。workspace全テストは並行ビルドによるディスク不足で中断し、空き容量確保後の再実行待ち。
+**検証結果・後続への引き継ぎ**: `kouga-storage`を追加。`Storage::local/s3/in_memory`、`save`、`attach`、`download`、`signed_download_url`、`delete`、`cleanup`を公開。`save`は5MiBバッファ・2並列まででstreamを保存し、PNG/JPEG/PDFの先頭バイト・個別上限を検証。PostgreSQL 17と実ローカルFS、およびMoto 5.1.15のS3互換HTTPで11MiB multipart、保存・取得・削除・署名付きGET、所有者外の不可視化、途中失敗、削除失敗からの再試行を検証。Rust 1.94 fmt/clippy/workspace全テストを通過（全テストは省容量profile・ローカルソケット許可下で実行）。S3の未完了multipartはbucket lifecycleで清掃する必要がある。HTTP multipartのfieldを渡すcontrollerと`kouga maintenance` CLIの呼び出しは後続タスク。
 
 ### T25 — WebSocket・複数サーバー配信
 
