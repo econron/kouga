@@ -536,10 +536,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T21 — worker・retry・ワンショット
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 実装済み・レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T21-queue-worker`
-- worktree: `.worktrees/T21-queue-worker`（作成前）
+- worktree: `.worktrees/T21-queue-worker`
 - 依存: T20、T03
 - 対応仕様: 4.10、3.3
 - 主担当領域: queue実行crate・worker runtime
@@ -548,12 +548,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 複数worker・強制終了・lease再取得・旧workerの完了拒否・retry/dead/未知payloadを検証する。
-- [ ] 件数/時間/空queueの終了、待機中キャンセル、失敗表示・再投入、graceful shutdownを確認する。
+- [x] 複数worker・強制終了・lease再取得・旧workerの完了拒否・retry/dead/未知payloadを検証する。
+- [x] 件数/時間/空queueの終了、待機中キャンセル、失敗表示・再投入、graceful shutdownを確認する。
 
 **今回含めないこと**: SMTP処理、クラウドの起動スケジューラー。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-worker`を追加。`Worker::new/register/run_forever/run_once/cancel_waiting/failed/retry_failed`、`JobContext`、`WorkerOptions`、`JobError`を公開。T20 schemaに追加する失敗理由列・期限切れlease indexのSQL migrationを同梱した。PostgreSQL 17で複数worker、retry/dead、未知・不正payload隔離、強制終了後再取得、旧lease拒否、待機中取消、手動再投入、終了猶予を検証。追加レビューで、one-shot期限中の遅いDB claimを中止し、claim直後も期限を確認して未実行jobのleaseを返すよう修正。shutdown tokenをhandlerへ伝播し、heartbeat DB障害・タイムアウトではhandlerに取消を通知して短く待ち、他jobも終了猶予内でdrainしてからエラーを返す。Tokioの`child_token()`は親の取消を子へ伝播する仕様を確認し、handler開始後に親を取消して`JobContext.cancellation`の通知を受ける実DBテストで証明した。独立したPostgreSQL 17でテーブルロック中の期限切れ、2件実行中のDB停止も再現。Rust 1.94.0のfmt、clippy、workspace全テスト、T21実DBテスト通過。追加修正前には実DBを使うworkspace全テストも通過したが、最終修正後の同テストは既存T04の200ms接続制限で2回失敗したため、T21実DBテストとDB環境変数なしのworkspaceテストで個別に確認した。CLI、SMTP、クラウド起動は未実装。SIGTERM実信号と長期高負荷は未検証。
 
 ### T22 — mailer・SMTP・メールテスト支援
 

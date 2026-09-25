@@ -1218,6 +1218,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kouga-worker"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "kouga-db",
+ "kouga-job",
+ "kouga-queue",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

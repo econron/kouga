@@ -287,6 +287,8 @@ payloadとは別にid/name/version/queue/available_at/attempt/lease_token/lease_
 
 JobErrorはRetryable/Permanent、基盤障害のsourceは内部保持。queueはat-least-once。完了更新にはlease token照合が必要で、副作用のexactly-onceを保証しない。unknown payloadは隔離する。常駐/ワンショットで同じhandlerを使い、`--once --max-jobs N --max-duration D`は件数・時間・空queueで新規取得を停止する。残り時間と終了猶予は分ける。
 
+T21の実装済みAPIは`Worker::new(db, Arc<state>, WorkerOptions)`、`register::<J>(handler)`、`run_forever(cancellation)`、`run_once(max_jobs, max_duration, cancellation)`、`cancel_waiting(id)`、`failed(limit)`、`retry_failed(id)`。handlerは`async fn(J, JobContext<S>) -> Result<(), JobError>`で、`JobError::Retryable`/`Permanent`の理由は静的文字列。`WorkerOptions`で購読queue、並列数、poll/lease/job timeout、終了猶予、最大試行回数、retry遅延を指定する。利用前にT20のSQLに続けて`kouga-worker/migrations/20260925000021_add_job_failure.up.sql`をアプリのmigrationへ組み込む。CLI接続は未実装。
+
 mailerはlettreのMessage/SMTPを再利用し、MiniJinjaはHTML autoescapeを有効にする。生成したWelcome等はアプリのworker内に配置する。メモリ送信は同じMailMessageを記録する。mailerから自動で独自ジョブを生成せず、通常のJob handlerがdeliverを呼ぶ。
 
 ## 10. 設定・起動・計測（T03の入口）
