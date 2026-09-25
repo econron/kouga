@@ -1,0 +1,16 @@
+syntax = "proto3";
+package kouga_fixture;
+
+service Tasks {
+  rpc Create (CreateRequest) returns (Task);
+}
+
+message CreateRequest { string title = 1; }
+message UpdateRequest {
+  optional string title = 1;
+  oneof description_change {
+    string description = 2;
+    bool clear_description = 3;
+  }
+}
+message Task { string title = 1; }

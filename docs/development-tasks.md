@@ -67,7 +67,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 未着手 |
-| T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 未着手 |
+| T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | レビュー待ち（期限契約の一部未完了） |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
@@ -683,10 +683,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T28 — gRPC入口・Protobuf・handler
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（未完了）
+- 担当者: Codex
 - ブランチ: `task/T28-grpc-core`
-- worktree: `.worktrees/T28-grpc-core`（作成前）
+- worktree: `.worktrees/T28-grpc-core`
 - 依存: T03、T04、T07、T18
 - 対応仕様: 4.19
 - 主担当領域: gRPC runtime・生成型接続・検証/認証adapter
@@ -696,11 +696,11 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 **完了条件**
 
 - [ ] metadata認証・入力検証・policy・status変換・deadline・サイズ/負荷制限を検証する。
-- [ ] presence/既定値を考慮し、共通modelとtxを利用できる。OTelを後付けできる計測点を用意する。
+- [x] presence/既定値を考慮し、共通modelとtxを利用できる。OTelを後付けできる計測点を用意する。
 
 **今回含めないこと**: 同一ポート多重化、grpc-web、streamingの必須対応。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-grpc`で共通Error→Status、非同期metadata認証、共通Request検証、global処理枠、handler期限、tonicのサイズ超過応答の変換を提供。`.proto`→`tonic-prost-build`のunary serviceを結合テストで生成し、実PostgreSQL 17とHTTP/2のgRPC通信で認証・policy・検証・モデル参照・tx・サイズ/過負荷・期限・DB停止を確認。`optional`/`oneof`→Patch三状態を確認。認証・検証spanを追加した。生成に必要な`protoc`はCIビルド環境のみへ追加し、runtimeイメージには含めない。Rust 1.94のfmt/clippy/workspace testと実DB結合テストは通過。tonic/prost系のMSRVは1.85〜1.88、ライセンスはMIT/Apache-2.0を配布Cargo.tomlで確認。**残件**: tonic 0.14のネイティブ`grpc-timeout`はhandlerに到達する前に`CANCELLED`を返し、契約の`DEADLINE_EXCEEDED`にならない。`within_deadline`でhandler自身の期限は契約どおりだが、クライアント指定期限の変換は未完了。CLI/アプリ生成はT29へ。現行fixtureはテスト専用で本番の業務型を生成しない。
 
 ### T29 — HTTP/gRPC同居と追加generator
 
