@@ -64,7 +64,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | レビュー待ち |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 未着手 |
-| T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
+| T25 | WebSocket・複数サーバー配信 | T10、T18 | レビュー待ち |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 未着手 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 未着手 |
@@ -620,10 +620,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T25 — WebSocket・複数サーバー配信
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（未統合）
+- 担当者: Codex
 - ブランチ: `task/T25-websocket`
-- worktree: `.worktrees/T25-websocket`（作成前）
+- worktree: `.worktrees/T25-websocket`
 - 依存: T10、T18
 - 対応仕様: 4.13
 - 主担当領域: channel runtime・配信・接続ticket
@@ -632,12 +632,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 一度限りのticket、Origin、購読/操作、期限/失効、接続切断を検証する。
-- [ ] 別プロセスへの配信、サイズ上限、遅い受信者、heartbeatと再接続後のHTTP取得を確認する。
+- [x] 一度限りのticket、Origin、購読/操作、期限/失効、接続切断を検証する。
+- [x] 別プロセスへの配信、サイズ上限、遅い受信者、heartbeatと再接続後のHTTP取得を確認する。
 
 **今回含めないこと**: 永続配信・切断中の履歴再送。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: PostgreSQL 17で実WebSocketと別OSプロセスへの配信、一度限りticket、Origin拒否、購読/操作拒否、token失効時切断、通知サイズ上限、1件buffer溢れでの遅い受信者切断、heartbeat後の継続配信、再接続後のテスト用HTTP routeからの状態取得を確認。Rust 1.94 fmt/clippy/workspace testも通過。`kouga-channel`のルートは既存HTTP Routerの`with_state`結果へmergeする。チケットはURLでなく`Sec-WebSocket-Protocol`で渡す。認証migrationの後にchannel migrationを適用する。
 
 ### T26 — 計測基盤・OTel exporter
 
