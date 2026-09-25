@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T03・T07統合済み、T04・T08着手準備
+状態: T00〜T04・T07・T08統合済み
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -43,11 +43,11 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T01 | 利用者向けAPIと共通契約の確定 | T00 | 完了 |
 | T02 | Cargo workspace・最小CI | T01 | 完了 |
 | T03 | 設定・起動・通常ログ | T02 | 完了 |
-| T04 | DB接続・トランザクション・DBエラー | T03 | 未着手 |
+| T04 | DB接続・トランザクション・DBエラー | T03 | 完了 |
 | T05 | migrationの生成・適用・履歴 | T04 | 未着手 |
 | T06 | migrationの巻き戻し・復旧・管理操作 | T05 | 未着手 |
 | T07 | validationの基本型と実行 | T02 | 完了 |
-| T08 | Requestのderiveと検証メタデータ | T07 | 未着手 |
+| T08 | Requestのderiveと検証メタデータ | T07 | 完了 |
 | T09 | HTTP router・controller・レスポンス | T03、T08 | 未着手 |
 | T10 | middleware基盤と標準middleware | T09 | 未着手 |
 | T11 | modelのCRUD・query実行 | T04 | 未着手 |
@@ -175,10 +175,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T04 — DB接続・トランザクション・DBエラー
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（mainへ統合済み）
+- 担当者: subagent
 - ブランチ: `task/T04-database`
-- worktree: `.worktrees/T04-database`（作成前）
+- worktree: `.worktrees/T04-database`
 - 依存: T03
 - 対応仕様: 4.4.1、4.4.4
 - 主担当領域: DBアクセス基盤
@@ -192,7 +192,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: modelのCRUD生成、独自DBドライバ。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-db`を追加し、SQLxのpool/transaction/Acquire、分離レベル、commit helper、DBエラー分類を公開。PostgreSQL 17でcommit/rollback、行ロック、pool timeout、キャンセル時rollback、UNIQUE/FK/CHECK、serialization failure、deadlockを検証した。Rust 1.94.0でfmt、clippy、全workspaceテストを通過。実通信断時のcommit結果不明は未再現で、分類の単体テストのみ。テスト用コンテナは停止・自動削除済み。`Cargo.lock`はT08との統合時に再生成した。
 
 ### T05 — migrationの生成・適用・履歴
 
@@ -259,10 +259,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T08 — Requestのderiveと検証メタデータ
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（mainへ統合済み）
+- 担当者: subagent
 - ブランチ: `task/T08-request-derive`
-- worktree: `.worktrees/T08-request-derive`（作成前）
+- worktree: `.worktrees/T08-request-derive`
 - 依存: T07
 - 対応仕様: 4.6.1、4.18
 - 主担当領域: Request用proc macro・schemaメタデータ
@@ -276,7 +276,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: OpenAPI文書全体の生成、model derive。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-request-derive`とvalidation側の接続を追加。名前付きstruct、単位・名前付きvariantのenumでDeserialize、検証、schemaを生成し、unknown field、rename、custom/custom_async、nested、PATCH、深さ32をテストした。Rust 1.94.0でfmt、clippy、全workspaceテストを通過。tuple variantは未対応で、明示的なコンパイルエラーとした。型付きdecodeの深さguardはRequest由来の再帰を対象とするため、HTTP入口での生JSON全体の深さ制限はT09で確認する。`Cargo.lock`はT04との統合時に再生成した。
 
 ### T09 — HTTP router・controller・レスポンス
 
