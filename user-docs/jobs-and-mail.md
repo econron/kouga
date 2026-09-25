@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。ジョブの宣言、handlerの登録、メールAPI、ワンショットのオプションは設計案です。
+> ドキュメント・プレビュー。`#[kouga_job::job]`による宣言と`kouga_queue::Enqueue`によるDB投入は実装済みです。generator、handlerの登録、メールAPI、ワンショットのオプションは設計案です。
 
 リクエスト内で完了する必要のないメール送信や集計は、ジョブとして登録します。HTTPは応答を返し、workerが後から処理します。
 
@@ -23,8 +23,7 @@ apps/worker/src/main.rs                         handlerの登録
 HTTPとworkerで共有するのは、ジョブの契約です。
 
 ```rust
-#[derive(Job)]
-#[job(name = "send_welcome_email", version = 1, queue = "mail")]
+#[kouga_job::job(name = "send_welcome_email", version = 1, queue = "mail")]
 pub struct SendWelcomeEmail {
     pub user_id: Uuid,
 }
@@ -41,6 +40,8 @@ SendWelcomeEmail { user_id: user.id }
 ```
 
 登録が成功すると、ジョブはPostgreSQLに保存されています。HTTPプロセスが終了しても、登録済みのジョブはworkerが取得できます。
+
+利用前に`crates/kouga-queue/migrations/20260925000020_create_kouga_jobs.up.sql`をアプリのmigrationへ追加して適用します。現段階ではgeneratorによる自動追加は未実装です。
 
 ## 保存と投入を一緒に確定する
 

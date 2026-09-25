@@ -220,6 +220,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -920,6 +921,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kouga-job"
+version = "0.1.0"
+dependencies = [
+ "kouga-job-derive",
+ "serde",
+]
+
+[[package]]
+name = "kouga-job-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "kouga-migration"
 version = "0.1.0"
 dependencies = [
@@ -937,6 +955,19 @@ dependencies = [
  "kouga-db",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "kouga-queue"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "kouga-db",
+ "kouga-job",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2188,6 +2219,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
