@@ -343,10 +343,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T12 — modelのderive・属性型生成
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 実装・検証済み、レビュー待ち（main未統合）
+- 担当者: Codex
 - ブランチ: `task/T12-model-derive`
-- worktree: `.worktrees/T12-model-derive`（作成前）
+- worktree: `.worktrees/T12-model-derive`
 - 依存: T11
 - 対応仕様: 4.4.1、4.4.2、4.4.4
 - 主担当領域: model用proc macro
@@ -355,12 +355,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 型マッピング・NULL・enum・既定値・日時列と、生成コードからのCRUDを検証する。
-- [ ] CRUDを非公開にして業務メソッドへ集約できる。不正なmodel宣言をコンパイル時に拒否する。
+- [x] 型マッピング・NULL・enum・既定値・日時列と、生成コードからのCRUDを検証する。
+- [x] CRUDを非公開にして業務メソッドへ集約できる。不正なmodel宣言をコンパイル時に拒否する。
 
 **今回含めないこと**: Requestへの自動変換、HTTP出力へのmodel全属性の自動公開。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `#[derive(kouga_model::Model)]`と`#[model(table = "...", module = task_meta, crud_visibility = "pub(crate)")]`を追加。`#[model(column = "...")]`と`#[model(default)]`から`NewX`/`UpdateX`、型付き`columns`、SQLx `FromRow`、pool/tx共通のCRUDを生成する。UUID `id`は自動生成または`create_with_id`で指定できる。日時列は更新属性から除外し、`updated_at`はDB時刻で更新する。Rust 1.94.0のfmt/clippy/workspace test、compile-fail doctest、PostgreSQL 17で型・enum/未知値・NULL/DB default・制約違反・CRUD・rollbackを確認。実DBテストは`KOUGA_TEST_DATABASE_URL`未設定時スキップ。associationはT13、Request変換は対象外。短縮列定数は生成せず`<model_module>::columns`を正本とする。
 
 ### T13 — association・preload
 
