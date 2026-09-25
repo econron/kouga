@@ -124,7 +124,7 @@ let router = Router::<AppState>::new()
 let app = router.with_state(state);
 ```
 
-ルート固有の処理は`Endpoint::middleware(fn)`で登録します。`HttpRequest::extensions_mut()`に入れた値はcontrollerで`Extension<T>`として受け取れます。`ClientIp`は接続元IPです。転送ヘッダーを使う場合は`HttpOptions::trusted_proxies`へ直近のプロキシIPを明示してください。レート制限は同じmiddleware APIで追加できますが、共有ストアはまだ提供していません。
+ルート固有の処理は`Endpoint::middleware(fn)`で登録します。`HttpRequest::extensions_mut()`に入れた値はcontrollerで`Extension<T>`として受け取れます。`ClientIp`は接続元IPです。転送ヘッダーを使う場合は`HttpOptions::trusted_proxies`へ直近のプロキシIPを明示してください。
 
 ## 現在使える認証コア（T18）
 
@@ -138,3 +138,5 @@ let router = Router::<AppState>::new()
 ```
 
 `require_bearer`は401と認証DB障害の503を区別し、認証主体を`Extension<CurrentUser>`へ入れます。所有者別の取得・一覧には`owned_by(query, owner_column, actor)`を使用できます。更新・削除では同じtransaction内で所有者scope付きの`for_update`取得を行ってから操作してください。
+
+共有レート制限には`kouga_cache::RateLimiter::new(db, "login", 5, Duration::from_secs(60))`を作り、`router.middleware(kouga_cache::rate_limit(limiter, |request| request.extensions().get::<ClientIp>().map(|ip| ip.0.to_string())))`で登録します。`kouga-cache`のSQL migrationを先に適用してください。認証主体で制限する場合は、認証済み主体をextensionに入れるmiddlewareの後に登録します。上限超過は429と`Retry-After`、DB障害は503です。キャッシュの`fetch`はDB障害時に元データを取得しますが、レート制限は通過させません。

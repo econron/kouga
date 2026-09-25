@@ -62,7 +62,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
-| T23 | キャッシュ・共有レート制限 | T04、T10 | 未着手 |
+| T23 | キャッシュ・共有レート制限 | T04、T10 | レビュー待ち |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 未着手 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
@@ -578,10 +578,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T23 — キャッシュ・共有レート制限
 
-- 状態: 未着手
-- 担当者: 未割当
-- ブランチ: `task/T23-cache-rate-limit`
-- worktree: `.worktrees/T23-cache-rate-limit`（作成前）
+- 状態: 実装・検証済み（レビュー待ち）
+- 担当者: Codex
+- ブランチ: `task/T23-cache-limit`
+- worktree: `.worktrees/T23-cache-limit`
 - 依存: T04、T10
 - 対応仕様: 4.11、4.2
 - 主担当領域: cache runtime・レート制限の追加middleware
@@ -590,12 +590,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] TTL・容量上限・名前空間・清掃と、キャッシュ障害時の元データ取得を検証する。
-- [ ] 同時要求でも上限を守り、429/Retry-Afterを返す。認可に関わる制限をキャッシュ同様にfail-openしない。
+- [x] TTL・容量上限・名前空間・清掃と、キャッシュ障害時の元データ取得を検証する。
+- [x] 同時要求でも上限を守り、429/Retry-Afterを返す。認可に関わる制限をキャッシュ同様にfail-openしない。
 
 **今回含めないこと**: stampede完全防止、キャッシュを使った業務処理の一度限り保証。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-cache`の`MemoryCache`・`PgCache`・`RateLimiter`、`rate_limit` middlewareを追加。SQL migrationを適用してから使う。PostgreSQL 17で複数同時要求の上限、窓リセット、HTTP 429/Retry-After、DB障害時503、キャッシュ障害時の元データ取得を検証。Rust 1.94のfmt/clippy/workspace testを実行。厳密なstampede防止は行わない。固定窓による境界バーストは許容し、高負荷の実計測はT34へ。
 
 ### T24 — アップロード・ストレージ
 
