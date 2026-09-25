@@ -52,7 +52,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T10 | middleware基盤と標準middleware | T09 | 完了 |
 | T11 | modelのCRUD・query実行 | T04 | 完了 |
 | T12 | modelのderive・属性型生成 | T11 | 完了 |
-| T13 | association・preload | T12 | 未着手 |
+| T13 | association・preload | T12 | レビュー待ち |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 未着手 |
 | T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
 | T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 未着手 |
@@ -366,10 +366,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T13 — association・preload
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T13-associations`
-- worktree: `.worktrees/T13-associations`（作成前）
+- worktree: `.worktrees/T13-associations`
 - 依存: T12
 - 対応仕様: 4.4.3
 - 主担当領域: 関連宣言・関連query・関連取得結果
@@ -378,12 +378,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] belongs_to/has_one/has_many/多対多、空関連・未存在・未取得の区別を検証する。
-- [ ] preloadのSQL件数、ID分割、ページ境界、関連の認可条件と明示したネストだけの取得を確認する。
+- [x] belongs_to/has_one/has_many/多対多、空関連・未存在・未取得の区別を検証する。
+- [x] preloadのSQL件数、ID分割、ページ境界、関連の認可条件と明示したネストだけの取得を確認する。
 
 **今回含めないこと**: 暗黙のlazy loading、関連の自動保存、polymorphic関連。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `#[belongs_to]`、`#[has_one]`、`#[has_many]`、`#[many_to_many]`から単件メソッド、`*_query()`、`<model>::relations::*()`を生成。`Loaded`と`Query::preload`は親順・件数を維持し、tuple 1〜4件・必須belongs_toネスト・関連filter/順序・ページを提供。1,000一意IDずつSQLを発行する。PostgreSQL 17で四種、空・任意/必須、認可scope、明示ネスト、ページ境界、トランザクション内preloadと1007親→関連SELECT 2回（pg_stat_statements）を検証。Rust 1.94 fmt/clippy/workspaceテスト実施。手書きModelには`id()`追加が必要。共有参照先ModelはCloneが必要。ネストは必須belongs_to起点のみ、多対多の対象が1000件を超える並び順指定はInvalidInputとする。外部キー/UNIQUEはmigrationで明示する。
 
 ### T14 — OpenAPI生成と開発用Docs
 

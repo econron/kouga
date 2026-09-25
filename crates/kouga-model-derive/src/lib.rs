@@ -2,11 +2,11 @@ use heck::ToSnakeCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Data, DeriveInput, Fields, GenericArgument, Ident, LitStr, PathArguments, Type, Visibility,
-    parse_macro_input,
+    Data, DeriveInput, Expr, Fields, GenericArgument, Ident, LitStr, PathArguments, Type,
+    Visibility, parse_macro_input,
 };
 
-#[proc_macro_derive(Model, attributes(model))]
+#[proc_macro_derive(Model, attributes(model, belongs_to, has_one, has_many, many_to_many))]
 pub fn derive_model(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand(input)
@@ -20,6 +20,96 @@ struct ModelField {
     column: LitStr,
     default: bool,
     system: bool,
+}
+
+struct Association {
+    kind: String,
+    target: Type,
+    name: Ident,
+    key: Ident,
+    through: Option<Type>,
+    target_key: Option<Ident>,
+}
+
+fn parse_association(attr: &syn::Attribute) -> syn::Result<Association> {
+    use syn::parse::Parser;
+    let args = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated
+        .parse2(attr.meta.require_list()?.tokens.clone())?;
+    let target = match args.first() {
+        Some(Expr::Path(path)) => Type::Path(syn::TypePath {
+            attrs: Vec::new(),
+            qself: None,
+            path: path.path.clone(),
+        }),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "relation target type required",
+            ));
+        }
+    };
+    let mut name = None;
+    let mut key = None;
+    let mut through = None;
+    let mut target_key = None;
+    for arg in args.iter().skip(1) {
+        let Expr::Assign(assign) = arg else {
+            return Err(syn::Error::new_spanned(arg, "expected name = value"));
+        };
+        let Expr::Path(left) = &*assign.left else {
+            return Err(syn::Error::new_spanned(arg, "expected relation option"));
+        };
+        let Some(option) = left.path.get_ident() else {
+            return Err(syn::Error::new_spanned(arg, "expected relation option"));
+        };
+        let Expr::Path(right) = &*assign.right else {
+            return Err(syn::Error::new_spanned(arg, "expected identifier"));
+        };
+        let Some(value) = right.path.get_ident() else {
+            return Err(syn::Error::new_spanned(arg, "expected identifier"));
+        };
+        match option.to_string().as_str() {
+            "name" if name.is_none() => name = Some(value.clone()),
+            "key" if key.is_none() => key = Some(value.clone()),
+            "through" if through.is_none() => {
+                through = Some(Type::Path(syn::TypePath {
+                    attrs: Vec::new(),
+                    qself: None,
+                    path: right.path.clone(),
+                }))
+            }
+            "target_key" if target_key.is_none() => target_key = Some(value.clone()),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    option,
+                    "unknown or duplicate relation option",
+                ));
+            }
+        }
+    }
+    let kind = attr.path().get_ident().unwrap().to_string();
+    let name = name.ok_or_else(|| syn::Error::new_spanned(attr, "relation name required"))?;
+    let key = key.ok_or_else(|| syn::Error::new_spanned(attr, "relation key required"))?;
+    if kind == "many_to_many" && (through.is_none() || target_key.is_none()) {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "many_to_many requires through and target_key",
+        ));
+    }
+    if kind != "many_to_many" && (through.is_some() || target_key.is_some()) {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "through and target_key require many_to_many",
+        ));
+    }
+    Ok(Association {
+        kind,
+        target,
+        name,
+        key,
+        through,
+        target_key,
+    })
 }
 
 fn valid_identifier(value: &str) -> bool {
@@ -228,6 +318,93 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &field.ident;
         quote!(if let ::kouga_model::core::Patch::Value(value) = attrs.#ident { fields.push(::kouga_model::Field::new(#module::columns::#ident, value)); })
     });
+    let associations = input
+        .attrs
+        .iter()
+        .filter(|a| {
+            matches!(
+                a.path().get_ident().map(Ident::to_string).as_deref(),
+                Some("belongs_to" | "has_one" | "has_many" | "many_to_many")
+            )
+        })
+        .map(parse_association)
+        .collect::<syn::Result<Vec<_>>>()?;
+    let mut relation_functions = Vec::new();
+    let mut relation_methods = Vec::new();
+    for relation in &associations {
+        let target = &relation.target;
+        let relation_name = &relation.name;
+        let key = &relation.key;
+        let key_column = LitStr::new(&key.to_string(), key.span());
+        let query_name = format_ident!("{}_query", relation_name);
+        if relation_name == &format_ident!("query") || relation_name == &format_ident!("find") {
+            return Err(syn::Error::new_spanned(
+                relation_name,
+                "relation name conflicts with Model method",
+            ));
+        }
+        let (descriptor_type, factory, query_method) = match relation.kind.as_str() {
+            "belongs_to" => {
+                let field = fields.iter().find(|f| f.ident == *key).ok_or_else(|| {
+                    syn::Error::new_spanned(key, "belongs_to key must be a model field")
+                })?;
+                let optional = last_type_name(&field.ty).is_some_and(|name| name == "Option");
+                if optional {
+                    (
+                        quote!(::kouga_model::OptionalBelongsTo<#name, #target>),
+                        quote!(::kouga_model::OptionalBelongsTo::new(|model: &#name| model.#key.into())),
+                        quote!(#crud_visibility fn #query_name(&self) -> ::kouga_model::Query<#target> {
+                            match self.#key { Some(id) => ::kouga_model::Query::new().filter_uuid_column("id", id), None => ::kouga_model::Query::new().filter_false() }
+                        }),
+                    )
+                } else {
+                    (
+                        quote!(::kouga_model::BelongsTo<#name, #target>),
+                        quote!(::kouga_model::BelongsTo::new(|model: &#name| model.#key.into())),
+                        quote!(#crud_visibility fn #query_name(&self) -> ::kouga_model::Query<#target> {
+                            ::kouga_model::Query::new().filter_uuid_column("id", self.#key)
+                        }),
+                    )
+                }
+            }
+            "has_many" => (
+                quote!(::kouga_model::HasMany<#name, #target>),
+                quote!(::kouga_model::HasMany::new(#key_column, |row: &#target| row.#key.into())),
+                quote!(#crud_visibility fn #query_name(&self) -> ::kouga_model::Query<#target> {
+                    ::kouga_model::Query::new().filter_uuid_column(#key_column, self.id)
+                }),
+            ),
+            "has_one" => (
+                quote!(::kouga_model::HasOne<#name, #target>),
+                quote!(::kouga_model::HasOne::new(#key_column, |row: &#target| row.#key.into())),
+                quote!(#crud_visibility fn #query_name(&self) -> ::kouga_model::Query<#target> {
+                    ::kouga_model::Query::new().filter_uuid_column(#key_column, self.id)
+                }),
+            ),
+            "many_to_many" => {
+                let through = relation.through.as_ref().unwrap();
+                let target_key = relation.target_key.as_ref().unwrap();
+                (
+                    quote!(::kouga_model::ManyToMany<#name, #through, #target>),
+                    quote!(::kouga_model::ManyToMany::new(#key_column, |row: &#through| row.#key.into(), |row: &#through| row.#target_key.into())),
+                    quote!(#crud_visibility fn #query_name(&self) -> ::kouga_model::Query<#through> {
+                        ::kouga_model::Query::new().filter_uuid_column(#key_column, self.id)
+                    }),
+                )
+            }
+            _ => unreachable!(),
+        };
+        relation_functions.push(quote!(pub fn #relation_name() -> #descriptor_type { #factory }));
+        relation_methods.push(quote! {
+            #query_method
+            #crud_visibility async fn #relation_name<'c, A>(&self, db: A) -> Result<<#descriptor_type as ::kouga_model::Relation<Self>>::Related, ::kouga_model::db::DbError>
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
+                let mut conn = db.acquire().await.map_err(::kouga_model::db::DbError::from)?;
+                let mut values = ::kouga_model::Relation::load(#module::relations::#relation_name(), ::std::slice::from_ref(self), &mut conn).await?;
+                Ok(values.remove(0))
+            }
+        });
+    }
     Ok(quote! {
         impl<'r> ::kouga_model::sqlx::FromRow<'r, ::kouga_model::sqlx::postgres::PgRow> for #name {
             fn from_row(row: &'r ::kouga_model::sqlx::postgres::PgRow) -> Result<Self, ::kouga_model::sqlx::Error> {
@@ -237,6 +414,7 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         impl ::kouga_model::Model for #name {
             const TABLE: &'static str = #table;
             const COLUMNS: &'static [&'static str] = &[#(#columns),*];
+            fn id(&self) -> ::kouga_model::Uuid { self.id }
         }
         #[allow(dead_code)]
         #model_visibility mod #module {
@@ -245,7 +423,10 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 use super::super::*;
                 #(pub const #column_names: ::kouga_model::Column<#name, #column_types> = ::kouga_model::Column::new(#columns);)*
             }
-            pub mod relations {}
+            pub mod relations {
+                use super::super::*;
+                #(#relation_functions)*
+            }
         }
         #[allow(dead_code)]
         #crud_visibility struct #new_name { #(#new_fields,)* }
@@ -254,6 +435,7 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         #crud_visibility struct #update_name { #(#update_fields,)* }
         #[allow(dead_code)]
         impl #name {
+            #(#relation_methods)*
             #crud_visibility fn query() -> ::kouga_model::Query<Self> { ::kouga_model::Query::new() }
             #crud_visibility async fn find<'c, A>(db: A, id: ::kouga_model::Uuid) -> Result<Option<Self>, ::kouga_model::db::DbError>
             where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
@@ -353,6 +535,26 @@ mod tests {
                     id: Uuid,
                     #[model(column = "updated_at")]
                     title: String,
+                }
+            ))
+            .is_err()
+        );
+        assert!(
+            expand(parse_quote!(
+                #[model(table = "tasks")]
+                #[belongs_to(Project, key = missing, name = project)]
+                struct Bad {
+                    id: Uuid,
+                }
+            ))
+            .is_err()
+        );
+        assert!(
+            expand(parse_quote!(
+                #[model(table = "tasks")]
+                #[many_to_many(Tag, key = task_id, name = tags)]
+                struct Bad {
+                    id: Uuid,
                 }
             ))
             .is_err()

@@ -1,8 +1,11 @@
 //! Small SQLx-backed model operations. Model declarations and attribute generation live in T12.
 
-use std::marker::PhantomData;
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
-use kouga_db::{Acquire, DbError, DbErrorKind, Postgres, QueryBuilder, Transaction};
+use kouga_db::{Acquire, DbError, DbErrorKind, PgConnection, Postgres, QueryBuilder, Transaction};
 use sqlx::{Encode, FromRow, Type, postgres::PgRow};
 
 pub use kouga_core as core;
@@ -30,7 +33,10 @@ pub use sqlx;
 pub use uuid::Uuid;
 
 /// Implement for application enum/newtype columns; nullable `Option<T>` is deliberately excluded.
-pub trait Comparable: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static {}
+pub trait Comparable:
+    for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + Clone + 'static
+{
+}
 impl Comparable for bool {}
 impl Comparable for i16 {}
 impl Comparable for i32 {}
@@ -47,26 +53,37 @@ impl Comparable for sqlx::types::Decimal {}
 pub trait Model: for<'r> FromRow<'r, PgRow> + Send + Unpin + Sized {
     const TABLE: &'static str;
     const COLUMNS: &'static [&'static str];
+    fn id(&self) -> Uuid;
 }
 
 trait Bind: Send {
     fn push(self: Box<Self>, builder: &mut QueryBuilder<Postgres>);
+    fn clone_box(&self) -> Box<dyn Bind>;
+}
+
+impl Clone for Box<dyn Bind> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
 }
 
 struct Bound<T>(T);
 
 impl<T> Bind for Bound<T>
 where
-    T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static,
+    T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + Clone + 'static,
 {
     fn push(self: Box<Self>, builder: &mut QueryBuilder<Postgres>) {
         builder.push_bind(self.0);
+    }
+    fn clone_box(&self) -> Box<dyn Bind> {
+        Box::new(Bound(self.0.clone()))
     }
 }
 
 fn bound<T>(value: T) -> Box<dyn Bind>
 where
-    T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static,
+    T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + Clone + 'static,
 {
     Box::new(Bound(value))
 }
@@ -178,7 +195,7 @@ impl<M, T: Comparable> Column<M, Option<T>> {
 
 impl<M, T> Column<M, T>
 where
-    Vec<T>: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static,
+    Vec<T>: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + Clone + 'static,
 {
     pub fn in_list(self, values: Vec<T>) -> Predicate<M> {
         if values.is_empty() {
@@ -193,7 +210,16 @@ pub struct Predicate<M> {
     expr: Expr,
     marker: PhantomData<M>,
 }
+impl<M> Clone for Predicate<M> {
+    fn clone(&self) -> Self {
+        Self {
+            expr: self.expr.clone(),
+            marker: PhantomData,
+        }
+    }
+}
 
+#[derive(Clone)]
 enum Expr {
     Compare(&'static str, &'static str, Box<dyn Bind>),
     In(&'static str, Box<dyn Bind>),
@@ -281,12 +307,398 @@ pub struct Order<M> {
     descending: bool,
     marker: PhantomData<M>,
 }
+impl<M> Clone for Order<M> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name,
+            descending: self.descending,
+            marker: PhantomData,
+        }
+    }
+}
 
 pub struct Query<M> {
     predicate: Option<Predicate<M>>,
     order: Vec<Order<M>>,
     limit: Option<i64>,
     offset: Option<i64>,
+}
+impl<M> Clone for Query<M> {
+    fn clone(&self) -> Self {
+        Self {
+            predicate: self.predicate.clone(),
+            order: self.order.clone(),
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
+}
+
+/// A model and its explicitly fetched relation. Plain models never issue hidden queries.
+#[derive(Debug)]
+pub struct Loaded<M, R> {
+    pub model: M,
+    pub related: R,
+}
+
+pub trait Relation<M: Model>: Send {
+    type Related: Send;
+    fn load(
+        self,
+        parents: &[M],
+        db: &mut PgConnection,
+    ) -> impl std::future::Future<Output = Result<Vec<Self::Related>, DbError>> + Send;
+}
+
+macro_rules! tuple_relation {
+    ($($name:ident : $index:tt),+) => {
+        #[allow(non_snake_case)]
+        impl<M: Model + Sync, $($name: Relation<M>,)+> Relation<M> for ($($name,)+) {
+            type Related = ($($name::Related,)+);
+            async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<Self::Related>, DbError> {
+                $(let $name = self.$index.load(parents, &mut *db).await?;)+
+                let mut rows = parents.iter().map(|_| ());
+                $(let mut $name = $name.into_iter();)+
+                Ok(rows.by_ref().map(|_| ($($name.next().expect("relation cardinality"),)+)).collect())
+            }
+        }
+    };
+}
+tuple_relation!(A:0, B:1);
+tuple_relation!(A:0, B:1, C:2);
+tuple_relation!(A:0, B:1, C:2, D:3);
+
+pub struct PreloadQuery<M, R> {
+    query: Query<M>,
+    relation: R,
+}
+
+pub struct PreloadPageQuery<M, R> {
+    page: PageQuery<M>,
+    relation: R,
+}
+
+impl<M: Model, R: Relation<M>> PreloadQuery<M, R> {
+    pub fn page(self, page: i64, per_page: i64) -> PreloadPageQuery<M, R> {
+        PreloadPageQuery {
+            page: self.query.page(page, per_page),
+            relation: self.relation,
+        }
+    }
+    pub fn limit(mut self, limit: i64) -> Self {
+        self.query = self.query.limit(limit);
+        self
+    }
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.query = self.query.offset(offset);
+        self
+    }
+    pub fn filter(mut self, predicate: Predicate<M>) -> Self {
+        self.query = self.query.filter(predicate);
+        self
+    }
+    pub fn order_by(mut self, order: Order<M>) -> Self {
+        self.query = self.query.order_by(order);
+        self
+    }
+
+    pub async fn fetch_all<'c, A>(self, db: A) -> Result<Vec<Loaded<M, R::Related>>, DbError>
+    where
+        A: Acquire<'c, Database = Postgres> + Send,
+    {
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        let parents = self.query.fetch_all_conn(&mut conn).await?;
+        let related = self.relation.load(&parents, &mut conn).await?;
+        Ok(parents
+            .into_iter()
+            .zip(related)
+            .map(|(model, related)| Loaded { model, related })
+            .collect())
+    }
+}
+
+impl<M: Model, R: Relation<M>> PreloadPageQuery<M, R> {
+    pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<Loaded<M, R::Related>>, DbError>
+    where
+        A: Acquire<'c, Database = Postgres> + Send,
+    {
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        let page = self.page.fetch_conn(&mut conn).await?;
+        let related = self.relation.load(&page.items, &mut conn).await?;
+        Ok(PageResult {
+            items: page
+                .items
+                .into_iter()
+                .zip(related)
+                .map(|(model, related)| Loaded { model, related })
+                .collect(),
+            page: page.page,
+            per_page: page.per_page,
+            has_next: page.has_next,
+        })
+    }
+}
+
+/// A typed relation descriptor; explicit UUID keys avoid runtime schema guessing.
+pub struct BelongsTo<M, R> {
+    key: fn(&M) -> Option<Uuid>,
+    query: Query<R>,
+}
+
+pub struct OptionalBelongsTo<M, R>(BelongsTo<M, R>);
+
+pub struct HasMany<M, R> {
+    key: fn(&R) -> Option<Uuid>,
+    column: &'static str,
+    query: Query<R>,
+    marker: PhantomData<M>,
+}
+
+pub struct HasOne<M, R>(HasMany<M, R>);
+
+pub struct ManyToMany<M, J, R> {
+    parent_key: fn(&J) -> Option<Uuid>,
+    related_key: fn(&J) -> Option<Uuid>,
+    parent_column: &'static str,
+    related: Query<R>,
+    marker: PhantomData<M>,
+}
+
+impl<M: Model, R: Model> BelongsTo<M, R> {
+    pub fn new(key: fn(&M) -> Option<Uuid>) -> Self {
+        Self {
+            key,
+            query: Query::new(),
+        }
+    }
+    pub fn filter(mut self, predicate: Predicate<R>) -> Self {
+        self.query = self.query.filter(predicate);
+        self
+    }
+    pub fn order_by(mut self, order: Order<R>) -> Self {
+        self.query = self.query.order_by(order);
+        self
+    }
+    pub fn preload<N: Relation<R>>(self, nested: N) -> Nested<M, R, N> {
+        Nested {
+            outer: self,
+            nested,
+        }
+    }
+}
+
+impl<M: Model, R: Model> OptionalBelongsTo<M, R> {
+    pub fn new(key: fn(&M) -> Option<Uuid>) -> Self {
+        Self(BelongsTo::new(key))
+    }
+    pub fn filter(mut self, predicate: Predicate<R>) -> Self {
+        self.0 = self.0.filter(predicate);
+        self
+    }
+}
+
+impl<M: Model, R: Model> HasMany<M, R> {
+    pub fn new(column: &'static str, key: fn(&R) -> Option<Uuid>) -> Self {
+        Self {
+            key,
+            column,
+            query: Query::new(),
+            marker: PhantomData,
+        }
+    }
+    pub fn filter(mut self, predicate: Predicate<R>) -> Self {
+        self.query = self.query.filter(predicate);
+        self
+    }
+    pub fn order_by(mut self, order: Order<R>) -> Self {
+        self.query = self.query.order_by(order);
+        self
+    }
+}
+
+impl<M: Model, R: Model> HasOne<M, R> {
+    pub fn new(column: &'static str, key: fn(&R) -> Option<Uuid>) -> Self {
+        Self(HasMany::new(column, key))
+    }
+    pub fn filter(mut self, predicate: Predicate<R>) -> Self {
+        self.0 = self.0.filter(predicate);
+        self
+    }
+}
+
+impl<M: Model, J: Model, R: Model> ManyToMany<M, J, R> {
+    pub fn new(
+        parent_column: &'static str,
+        parent_key: fn(&J) -> Option<Uuid>,
+        related_key: fn(&J) -> Option<Uuid>,
+    ) -> Self {
+        Self {
+            parent_key,
+            related_key,
+            parent_column,
+            related: Query::new(),
+            marker: PhantomData,
+        }
+    }
+    pub fn filter(mut self, predicate: Predicate<R>) -> Self {
+        self.related = self.related.filter(predicate);
+        self
+    }
+    pub fn order_by(mut self, order: Order<R>) -> Self {
+        self.related = self.related.order_by(order);
+        self
+    }
+}
+
+pub struct Nested<M, R, N> {
+    outer: BelongsTo<M, R>,
+    nested: N,
+}
+
+async fn matching<R: Model>(
+    query: Query<R>,
+    column_name: &'static str,
+    mut keys: Vec<Uuid>,
+    db: &mut PgConnection,
+) -> Result<Vec<R>, DbError> {
+    if keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen = HashSet::new();
+    keys.retain(|id| seen.insert(*id));
+    let mut rows = Vec::new();
+    for chunk in keys.chunks(1_000) {
+        let scoped = query
+            .clone()
+            .filter(Predicate::new(Expr::In(column_name, bound(chunk.to_vec()))));
+        rows.extend(scoped.fetch_all_conn(&mut *db).await?);
+    }
+    Ok(rows)
+}
+
+impl<M: Model + Sync, R: Model + Clone> Relation<M> for BelongsTo<M, R> {
+    type Related = R;
+    async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<R>, DbError> {
+        let keys = parents.iter().filter_map(self.key).collect();
+        let rows = matching(self.query, "id", keys, db).await?;
+        let by_id: HashMap<Uuid, R> = rows.into_iter().map(|row| (row.id(), row)).collect();
+        parents
+            .iter()
+            .map(|parent| {
+                (self.key)(parent)
+                    .and_then(|id| by_id.get(&id))
+                    .cloned()
+                    .ok_or_else(|| DbError::new(DbErrorKind::Integrity))
+            })
+            .collect()
+    }
+}
+
+impl<M: Model + Sync, R: Model + Clone> Relation<M> for OptionalBelongsTo<M, R> {
+    type Related = Option<R>;
+    async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<Option<R>>, DbError> {
+        let keys = parents.iter().filter_map(self.0.key).collect();
+        let rows = matching(self.0.query, "id", keys, db).await?;
+        let by_id: HashMap<Uuid, R> = rows.into_iter().map(|row| (row.id(), row)).collect();
+        Ok(parents
+            .iter()
+            .map(|parent| (self.0.key)(parent).and_then(|id| by_id.get(&id)).cloned())
+            .collect())
+    }
+}
+
+impl<M: Model + Sync, R: Model> Relation<M> for HasMany<M, R> {
+    type Related = Vec<R>;
+    async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<Vec<R>>, DbError> {
+        let keys: Vec<_> = parents.iter().map(Model::id).collect();
+        let rows = matching(self.query, self.column, keys, db).await?;
+        let mut grouped: HashMap<Uuid, Vec<R>> = HashMap::new();
+        for row in rows {
+            if let Some(id) = (self.key)(&row) {
+                grouped.entry(id).or_default().push(row);
+            }
+        }
+        Ok(parents
+            .iter()
+            .map(|parent| grouped.remove(&parent.id()).unwrap_or_default())
+            .collect())
+    }
+}
+
+impl<M: Model + Sync, R: Model> Relation<M> for HasOne<M, R> {
+    type Related = Option<R>;
+    async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<Option<R>>, DbError> {
+        let groups: Vec<Vec<R>> = self.0.load(parents, db).await?;
+        groups
+            .into_iter()
+            .map(|mut group| {
+                if group.len() > 1 {
+                    Err(DbError::new(DbErrorKind::Integrity))
+                } else {
+                    Ok(group.pop())
+                }
+            })
+            .collect()
+    }
+}
+
+impl<M: Model + Sync, J: Model, R: Model + Clone> Relation<M> for ManyToMany<M, J, R> {
+    type Related = Vec<R>;
+    async fn load(self, parents: &[M], db: &mut PgConnection) -> Result<Vec<Vec<R>>, DbError> {
+        let links = matching(
+            Query::<J>::new(),
+            self.parent_column,
+            parents.iter().map(Model::id).collect(),
+            &mut *db,
+        )
+        .await?;
+        let target_ids: Vec<_> = links.iter().filter_map(self.related_key).collect();
+        // ponytail: reject cross-chunk ordered many-to-many; add a merge comparator if this limit matters.
+        if !self.related.order.is_empty() && target_ids.iter().collect::<HashSet<_>>().len() > 1_000
+        {
+            return Err(invalid());
+        }
+        let related = matching(self.related, "id", target_ids, db).await?;
+        let mut owners: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        for link in links {
+            if let (Some(parent), Some(target)) =
+                ((self.parent_key)(&link), (self.related_key)(&link))
+            {
+                owners.entry(target).or_default().push(parent);
+            }
+        }
+        let mut grouped: HashMap<Uuid, Vec<R>> = HashMap::new();
+        for row in related {
+            if let Some(parent_ids) = owners.get(&row.id()) {
+                for parent in parent_ids {
+                    grouped.entry(*parent).or_default().push(row.clone());
+                }
+            }
+        }
+        Ok(parents
+            .iter()
+            .map(|parent| grouped.remove(&parent.id()).unwrap_or_default())
+            .collect())
+    }
+}
+
+impl<M: Model + Sync, R: Model + Clone + Sync, N: Relation<R> + Send> Relation<M>
+    for Nested<M, R, N>
+{
+    type Related = Loaded<R, N::Related>;
+    async fn load(
+        self,
+        parents: &[M],
+        db: &mut PgConnection,
+    ) -> Result<Vec<Self::Related>, DbError> {
+        let outer: Vec<R> = self.outer.load(parents, &mut *db).await?;
+        let inner = self.nested.load(&outer, db).await?;
+        Ok(outer
+            .into_iter()
+            .zip(inner)
+            .map(|(model, related)| Loaded { model, related })
+            .collect())
+    }
 }
 
 impl<M: Model> Default for Query<M> {
@@ -311,6 +723,12 @@ impl<M: Model> Query<M> {
         });
         self
     }
+    pub fn filter_uuid_column(self, column: &'static str, id: Uuid) -> Self {
+        self.filter(Predicate::new(Expr::Compare(column, "=", bound(id))))
+    }
+    pub fn filter_false(self) -> Self {
+        self.filter(Predicate::new(Expr::False))
+    }
     pub fn order_by(mut self, order: Order<M>) -> Self {
         self.order.push(order);
         self
@@ -332,6 +750,12 @@ impl<M: Model> Query<M> {
     }
     pub fn for_update(self) -> LockedQuery<M> {
         LockedQuery(self)
+    }
+    pub fn preload<R: Relation<M>>(self, relation: R) -> PreloadQuery<M, R> {
+        PreloadQuery {
+            query: self,
+            relation,
+        }
     }
 
     fn build(
@@ -396,6 +820,15 @@ impl<M: Model> Query<M> {
         query
             .build_query_as()
             .fetch_all(&mut *conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn fetch_all_conn(self, db: &mut PgConnection) -> Result<Vec<M>, DbError> {
+        let mut query = self.build("SELECT * FROM ", false, false)?;
+        query
+            .build_query_as()
+            .fetch_all(db)
             .await
             .map_err(Into::into)
     }
@@ -471,10 +904,14 @@ pub struct PageResult<M> {
     pub has_next: bool,
 }
 impl<M: Model> PageQuery<M> {
-    pub async fn fetch<'c, A>(mut self, db: A) -> Result<PageResult<M>, DbError>
+    pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<M>, DbError>
     where
         A: Acquire<'c, Database = Postgres> + Send,
     {
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        self.fetch_conn(&mut conn).await
+    }
+    async fn fetch_conn(mut self, conn: &mut PgConnection) -> Result<PageResult<M>, DbError> {
         if self.page < 1 || !(1..=100).contains(&self.per_page) {
             return Err(invalid());
         }
@@ -484,8 +921,7 @@ impl<M: Model> PageQuery<M> {
         self.query.limit = Some(self.per_page + 1);
         self.query.offset = Some(offset);
         let mut query = self.query.build("SELECT * FROM ", true, false)?;
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        let mut items: Vec<M> = query.build_query_as().fetch_all(&mut *conn).await?;
+        let mut items: Vec<M> = query.build_query_as().fetch_all(conn).await?;
         let has_next = items.len() > self.per_page as usize;
         items.truncate(self.per_page as usize);
         Ok(PageResult {
@@ -526,7 +962,7 @@ pub struct Field<M> {
 impl<M> Field<M> {
     pub fn new<T>(column: Column<M, T>, value: T) -> Self
     where
-        T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + 'static,
+        T: for<'q> Encode<'q, Postgres> + Type<Postgres> + Send + Clone + 'static,
     {
         Self {
             name: column.name,
