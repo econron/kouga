@@ -260,7 +260,8 @@ pub trait Job: Serialize + DeserializeOwned + Send + Sync + 'static {
     const VERSION: u32;
     const QUEUE: &'static str;
 }
-// Job deriveはserdeも生成する。
+// 実装済みの #[kouga_job::job(...)] 属性はserdeも生成する。
+// #[derive(Job)] も使えるが、その場合serdeのderiveは別途必要。
 // kouga_queue::Enqueueをimportすると任意のJobで利用可能。
 let job_id: Uuid = SendWelcomeEmail { user_id }.enqueue(&mut tx).await?;
 worker.register::<SendWelcomeEmail>(send_welcome_email)?;

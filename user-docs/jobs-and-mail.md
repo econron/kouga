@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。ジョブの宣言、handlerの登録、メールAPI、ワンショットのオプションは設計案です。
+> ドキュメント・プレビュー。`#[kouga_job::job]`による宣言と`kouga_queue::Enqueue`によるDB投入は実装済みです。generator、handlerの登録、メールAPI、ワンショットのオプションは設計案です。
 
 リクエスト内で完了する必要のないメール送信や集計は、ジョブとして登録します。HTTPは応答を返し、workerが後から処理します。
 
@@ -23,8 +23,7 @@ apps/worker/src/main.rs                         handlerの登録
 HTTPとworkerで共有するのは、ジョブの契約です。
 
 ```rust
-#[derive(Job)]
-#[job(name = "send_welcome_email", version = 1, queue = "mail")]
+#[kouga_job::job(name = "send_welcome_email", version = 1, queue = "mail")]
 pub struct SendWelcomeEmail {
     pub user_id: Uuid,
 }
