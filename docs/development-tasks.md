@@ -217,10 +217,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T06 — migrationの巻き戻し・復旧・管理操作
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: main agent → subagent
 - ブランチ: `task/T06-migration-admin`
-- worktree: `.worktrees/T06-migration-admin`（作成前）
+- worktree: `.worktrees/T06-migration-admin`
 - 依存: T05
 - 対応仕様: 4.5.2、4.5.3
 - 主担当領域: migration管理API・管理用SQL実行
@@ -229,12 +229,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 不可逆な対象を含むrollbackは全件未変更で拒否し、非トランザクション中断から手動修復後に継続できる。
+- [x] 不可逆な対象を含むrollbackは全件未変更で拒否し、非トランザクション中断から手動修復後に継続できる。
 - [ ] 破壊操作の明示許可、schema出力、seedを確認する。reset時の接続終了と排他も検証し、通常起動でmigrationしない。
 
 **今回含めないこと**: クラウドのDB作成、バックアップ復元、自動的な破壊変更。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: 前半でrollback、非tx適用/down、dirty状態表示、理由必須のrepair監査を実装。PostgreSQL 17で`CREATE UNIQUE INDEX CONCURRENTLY`の失敗・手動修復・再実行、非tx down、不可逆対象を含むrollbackの事前拒否を検証。DB作成/reset、schema出力、seed、管理CLI接続は後半で実装する。通常起動からmigrationは呼ばない。
 
 ### T07 — validationの基本型と実行
 
