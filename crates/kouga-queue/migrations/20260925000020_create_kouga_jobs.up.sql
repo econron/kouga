@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS kouga_jobs (
+CREATE TABLE kouga_jobs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
     version integer NOT NULL CHECK (version > 0),
@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS kouga_jobs (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS kouga_jobs_ready ON kouga_jobs (queue, available_at) WHERE status = 'pending';
+CREATE INDEX kouga_jobs_ready ON kouga_jobs (queue, available_at) WHERE status = 'pending';

@@ -41,6 +41,8 @@ SendWelcomeEmail { user_id: user.id }
 
 登録が成功すると、ジョブはPostgreSQLに保存されています。HTTPプロセスが終了しても、登録済みのジョブはworkerが取得できます。
 
+利用前に`crates/kouga-queue/migrations/20260925000020_create_kouga_jobs.up.sql`をアプリのmigrationへ追加して適用します。現段階ではgeneratorによる自動追加は未実装です。
+
 ## 保存と投入を一緒に確定する
 
 ユーザーを作れたのにジョブ登録だけ失敗する、といった中途半端な状態を避けるには、同じトランザクションを使います。password_hashは、事前に標準のパスワード処理で生成した値とします。

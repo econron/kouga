@@ -271,7 +271,7 @@ async fn send_welcome_email(job: SendWelcomeEmail, ctx: JobContext<WorkerState>)
 
 enqueueはmodelと同じAcquire引数、戻り値Result<Uuid, QueueError>。`enqueue_at(db, DateTime<Utc>)`で遅延投入。JobContext<S>は`state: Arc<S>, job_id, attempt, cancellation`。mailer/DBを固定で内蔵せず、`ctx.state.db`/`ctx.state.mailer`から使う。Worker<S>::registerのhandlerはimpl Fn(J, JobContext<S>)→Send Futureで型を推論し、指定genericはJ一つ。重複(name, version)は起動エラー。
 
-payloadとは別にid/name/version/queue/available_at/attempt/lease_token/lease_untilとtrace metadataを保存する。trace metadataはoptionalなtraceparent/tracestate文字列で、OTelの型をcontractsに持ち込まない。認証情報は保存しない。enqueue呼び出し時のcontext注入点をqueueへ用意し、OTel未搭載時は空にする。
+payloadとは別にid/name/version/queue/available_at/attempt/lease_token/lease_untilとtrace metadataを保存する。trace metadataはoptionalなtraceparent/tracestate文字列で、OTelの型をcontractsに持ち込まない。認証情報は保存しない。enqueue呼び出し時のcontext注入点をqueueへ用意し、OTel未搭載時は空にする。即時投入の時刻はDBの`now()`を使う。queue SQL migrationは`kouga-queue/migrations/`に置き、アプリのmigrationへ組み込む。
 
 JobErrorはRetryable/Permanent、基盤障害のsourceは内部保持。queueはat-least-once。完了更新にはlease token照合が必要で、副作用のexactly-onceを保証しない。unknown payloadは隔離する。常駐/ワンショットで同じhandlerを使い、`--once --max-jobs N --max-duration D`は件数・時間・空queueで新規取得を停止する。残り時間と終了猶予は分ける。
 
