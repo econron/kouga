@@ -229,6 +229,8 @@ Send futureの生成はSQLx Acquireのlifetimeを保持する。必要なら通�
 
 `task.project(&db).await`は維持するが、同名の関連定数とメソッドは併設できないため、preloadは別moduleのdescriptorを使う。
 
+**T13実装済み宣言**: `#[belongs_to(Project, key = project_id, name = project)]`、`#[has_one(Profile, key = project_id, name = profile)]`、`#[has_many(Task, key = project_id, name = tasks)]`、`#[many_to_many(Tag, through = ProjectTag, key = project_id, target_key = tag_id, name = tags)]`をModel structへ付ける。`key`/`target_key`は実際のRustフィールド名とSQL列名を一致させる。多対多は明示的な中間Modelを要する。参照先が複数親から共有されるため、belongs_toの参照先と多対多の対象Modelは`Clone`が必要。手書き`Model`実装には`id(&self) -> Uuid`を追加する。宣言はmigrationを変更しない。
+
 ```rust,ignore
 let rows = Task::query()
     .preload(task::relations::project())
@@ -245,7 +247,7 @@ pub struct Loaded<M, R> { pub model: M, pub related: R }
 
 複数関連は`.preload((task::relations::project(), task::relations::tags()))`→`Loaded<Task, (Project, Vec<Tag>)>`。ネストは`task::relations::project().preload(project::relations::owner())`→`Loaded<Task, Loaded<Project, User>>`。連続したpreload呼び出しは不可とし、一つの明示した木にまとめる。初版tupleは1〜4関連、より多い関連は親のID集合に対して別のbatch取得を明示する。
 
-関連条件はdescriptorの`.filter(Project::owner_id.eq(actor.id))`、順序は`.order_by(...)`。親取得後、関連ごと・ID chunkごとにまとめてSQLを発行し、親の順序・件数を保持する。関連を黙ってlimitしない。単件の関連queryは`task.project_query()`、`project.tasks_query()`、多対多は明示した中間modelを経由するdescriptorを生成する。必要なら同じtxでrepeatable readを選ぶ。
+関連条件はdescriptorの`.filter(project::columns::owner_id.eq(actor.id))`、順序は`.order_by(...)`。親取得後、関連ごと・1,000個の一意IDごとにSQLを発行し、親の順序・件数を保持する。`preload(...).page(page, per_page).fetch(&db)`も親ページを確定してから関連を読む。関連を黙ってlimitしない。単件の関連queryは`task.project_query()`、`project.tasks_query()`、多対多では中間Modelのqueryを返す。ネスト指定は現状必須belongs_toからのみ対応。多対多の対象IDが1,000件を超え、同時に関連の並び順を指定した場合は、分割を跨ぐ順序が保証できないためInvalidInputを返す。必要なら同じtxでrepeatable readを選ぶ。
 
 ## 8. Migration
 

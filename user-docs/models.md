@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。以下の`#[derive(Model)]`と`Project::find/create/query`は後続T12の設計案です。T11では手動`Model`実装、`Column`/`Query`と`kouga_model::{find, create, update, delete}`を実装済みです。
+> ドキュメント・プレビュー。`#[derive(Model)]`と関連/preloadは実装済みですが、アプリ生成例は後続タスクで整えます。
 
 現時点の型付きqueryは次の形で使えます。列名は`Model::COLUMNS`の許可リストで照合され、値はSQLxでbindします。
 
@@ -13,6 +13,7 @@ struct Project { id: Uuid, name: String }
 impl kouga_model::Model for Project {
     const TABLE: &'static str = "projects";
     const COLUMNS: &'static [&'static str] = &["id", "name"];
+    fn id(&self) -> Uuid { self.id }
 }
 
 let name = kouga_model::Column::<Project, String>::new("name");
@@ -32,7 +33,7 @@ kouga generate model Project name:string
 modelとmigrationが生成されます。HTTP APIも一緒に作りたい場合は`generate resource`を使います。
 
 ```rust
-#[derive(Model)]
+#[derive(Clone, Model)]
 #[model(table = "projects")]
 pub struct Project {
     pub id: Uuid,
@@ -89,7 +90,7 @@ HTTPの一覧ではページングを使います。生成controllerは標準で
 Taskにproject_idを追加した例です。先にmigrationで列と外部キーを作ります。
 
 ```rust
-#[derive(Model)]
+#[derive(Clone, Model)]
 #[model(table = "tasks")]
 #[belongs_to(Project, key = project_id, name = project)]
 pub struct Task {
@@ -133,7 +134,7 @@ let tasks = Task::query()
 
 preloadの結果は`Vec<Loaded<Task, Project>>`です。各要素の`row.model`がTask、`row.related`が取得済みProjectです。任意の関連ならOption、複数の関連先ならVecになります。通常のmodelと型を分けるので、「まだ取得していない」と「取得したけれど存在しない」を混同しません。
 
-`task::relations`はModelから生成する関連指定用のモジュールです。単件の取得メソッド`task.project(...)`と名前を衝突させずに使えます。詳しい契約は[共通API契約](../docs/api-contracts.md)を参照してください（実装前）。
+`task::relations`はModelから生成する関連指定用のモジュールです。単件の取得メソッド`task.project(...)`と名前を衝突させずに使えます。参照先を複数の親が共有できるため、参照先Modelには`Clone`をderiveします。詳しい契約は[共通API契約](../docs/api-contracts.md)を参照してください。
 
 関連が非常に多い場合は、関連用のqueryでページングしてください。また、関連をたどれることと、利用者に見せてよいことは別です。[認証と認可](auth-and-middleware.md)の条件を関連queryにも適用します。
 

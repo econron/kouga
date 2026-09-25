@@ -15,6 +15,9 @@ impl Model for Task {
     const TABLE: &'static str = "kouga_t11_tasks";
     const COLUMNS: &'static [&'static str] =
         &["id", "name", "note", "status", "created_at", "updated_at"];
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 const NAME: Column<Task, String> = Column::new("name");
