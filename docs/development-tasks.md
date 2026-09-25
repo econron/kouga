@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T05・T07〜T09・T11・T20・T26統合済み。T06・T10・T12・T15・T17・T21・T22レビュー待ち
+状態: T00〜T12・T15・T17・T20〜T22・T26統合済み。T13・T14・T18・T23が着手可能
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -45,23 +45,23 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T03 | 設定・起動・通常ログ | T02 | 完了 |
 | T04 | DB接続・トランザクション・DBエラー | T03 | 完了 |
 | T05 | migrationの生成・適用・履歴 | T04 | 完了 |
-| T06 | migrationの巻き戻し・復旧・管理操作 | T05 | レビュー待ち |
+| T06 | migrationの巻き戻し・復旧・管理操作 | T05 | 完了（CLI接続は未了） |
 | T07 | validationの基本型と実行 | T02 | 完了 |
 | T08 | Requestのderiveと検証メタデータ | T07 | 完了 |
 | T09 | HTTP router・controller・レスポンス | T03、T08 | 完了 |
-| T10 | middleware基盤と標準middleware | T09 | レビュー待ち |
+| T10 | middleware基盤と標準middleware | T09 | 完了 |
 | T11 | modelのCRUD・query実行 | T04 | 完了 |
-| T12 | modelのderive・属性型生成 | T11 | レビュー待ち |
+| T12 | modelのderive・属性型生成 | T11 | 完了 |
 | T13 | association・preload | T12 | 未着手 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 未着手 |
-| T15 | CLI基盤と新規アプリ生成 | T03、T09 | レビュー待ち |
+| T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
 | T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 未着手 |
-| T17 | テスト支援基盤 | T04、T05、T09 | レビュー待ち |
+| T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 未着手 |
 | T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
-| T21 | worker・retry・ワンショット | T20、T03 | レビュー待ち |
-| T22 | mailer・SMTP・メールテスト支援 | T20、T03 | レビュー待ち |
+| T21 | worker・retry・ワンショット | T20、T03 | 完了 |
+| T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | 未着手 |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 未着手 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 未着手 |
@@ -217,7 +217,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T06 — migrationの巻き戻し・復旧・管理操作
 
-- 状態: 管理API実装済み・CLI接続待ち・レビュー待ち
+- 状態: 完了（main統合済み。CLI接続は後続）
 - 担当者: Codex
 - ブランチ: `task/T06-migration-admin`
 - worktree: `.worktrees/T06-migration-admin`
@@ -301,7 +301,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T10 — middleware基盤と標準middleware
 
-- 状態: 実装・検証済み（レビュー待ち）
+- 状態: 完了（main統合済み）
 - 担当者: subagent
 - ブランチ: `task/T10-middleware`
 - worktree: `.worktrees/T10-middleware`
@@ -345,7 +345,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T12 — modelのderive・属性型生成
 
-- 状態: 実装・検証済み、レビュー待ち（main未統合）
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T12-model-derive`
 - worktree: `.worktrees/T12-model-derive`
@@ -408,7 +408,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T15 — CLI基盤と新規アプリ生成
 
-- 状態: 実装・検証済み（レビュー待ち）
+- 状態: 完了（main統合済み）
 - 担当者: subagent
 - ブランチ: `task/T15-cli`
 - worktree: `.worktrees/T15-cli`
@@ -452,7 +452,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T17 — テスト支援基盤
 
-- 状態: レビュー待ち（main未統合）
+- 状態: 完了（main統合済み。生成テスト接続はT16）
 - 担当者: main agent
 - ブランチ: `task/T17-test-support`
 - worktree: `.worktrees/T17-test-support`
@@ -536,7 +536,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T21 — worker・retry・ワンショット
 
-- 状態: 実装済み・レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T21-queue-worker`
 - worktree: `.worktrees/T21-queue-worker`
@@ -557,7 +557,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T22 — mailer・SMTP・メールテスト支援
 
-- 状態: レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T22-mailer`
 - worktree: `.worktrees/T22-mailer`
