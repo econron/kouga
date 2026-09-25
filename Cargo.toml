@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/kouga-core", "crates/kouga-runtime", "crates/kouga-validation", "crates/kouga-db", "crates/kouga-request-derive", "crates/kouga-migration", "crates/kouga-http", "crates/kouga-http-derive", "crates/kouga-model", "crates/kouga-model-derive", "crates/kouga-job", "crates/kouga-job-derive", "crates/kouga-queue", "crates/kouga-telemetry", "crates/kouga-cli", "crates/kouga-test", "crates/kouga-worker"]
+members = ["crates/kouga-core", "crates/kouga-runtime", "crates/kouga-validation", "crates/kouga-db", "crates/kouga-request-derive", "crates/kouga-migration", "crates/kouga-http", "crates/kouga-http-derive", "crates/kouga-model", "crates/kouga-model-derive", "crates/kouga-job", "crates/kouga-job-derive", "crates/kouga-queue", "crates/kouga-telemetry", "crates/kouga-cli", "crates/kouga-test", "crates/kouga-worker", "crates/kouga-mailer"]
 resolver = "3"
 
 [workspace.package]

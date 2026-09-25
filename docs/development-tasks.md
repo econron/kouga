@@ -557,10 +557,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T22 — mailer・SMTP・メールテスト支援
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T22-mailer`
-- worktree: `.worktrees/T22-mailer`（作成前）
+- worktree: `.worktrees/T22-mailer`
 - 依存: T20、T03
 - 対応仕様: 4.9、4.16、3.2
 - 主担当領域: mailer runtime・テンプレート・メール検査
@@ -569,12 +569,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] SMTPへの送信、TLS検証、HTML escape、ヘッダー注入拒否、失敗時の結果を検証する。
-- [ ] HTTP側からSMTP実装を除外でき、worker handlerへ組み込める。外部送信なしでメールを検査できる。
+- [x] SMTPへの送信、TLS検証、HTML escape、ヘッダー注入拒否、失敗時の結果を検証する。
+- [x] HTTP側からSMTP実装を除外でき、worker handlerへ組み込める。外部送信なしでメールを検査できる。
 
 **今回含めないこと**: SMTPサーバー運用、メール送信のexactly-once保証。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga-mailer`を追加。`MailMessage::new/html/attach/deliver`、`render_html`、`SmtpMailer::relay/starttls/insecure_local`、`MemoryMailer::recorded`を公開。lettreのTLS必須設定とMiniJinjaのHTML autoescapeを利用し、平文SMTPはloopback専用の明示APIだけに限定。ローカルSMTPで受理・拒否・STARTTLS非対応時の送信拒否を確認し、メール内容・MIME添付・ヘッダー改行拒否・Sendなworker handler futureをテスト。`cargo +1.94.0 fmt --all --check`、`clippy --workspace --all-targets --locked -- -D warnings`、`test --workspace --locked`を実行。実SMTPサーバーの公開CA証明書検証およびT21の実worker登録は未検証。HTTP側はジョブ契約とqueueのみに依存させ、送信はworker handlerから`deliver`を呼ぶ。queueによる再試行はat-least-onceで重複送信し得る。
 
 ### T23 — キャッシュ・共有レート制限
 
