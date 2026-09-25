@@ -1,6 +1,6 @@
 use crate::{
-    Created, Extension, IntoMiddleware, Json, Middleware, NoContent, Page, Path, Validated,
-    ValidatedQuery,
+    Created, Extension, IntoMiddleware, Json, Middleware, Multipart, NoContent, Page, Path,
+    Validated, ValidatedQuery,
 };
 use axum::handler::Handler;
 use axum::routing::{MethodRouter, delete, get, patch, post, put};
@@ -32,6 +32,7 @@ pub struct Operation {
     pub path_schema: Option<serde_json::Value>,
     pub query_schema: Option<serde_json::Value>,
     pub request_body: Option<serde_json::Value>,
+    pub request_content_type: &'static str,
     pub responses: Vec<ResponseMeta>,
     pub security: Vec<String>,
     pub summary: Option<&'static str>,
@@ -50,6 +51,7 @@ impl Operation {
             path_schema: None,
             query_schema: None,
             request_body: None,
+            request_content_type: "application/json",
             responses: Vec::new(),
             security: Vec::new(),
             summary: None,
@@ -61,6 +63,14 @@ impl Operation {
 
     pub fn json_input<T: ApiSchema>(mut self) -> Self {
         self.request_body = Some(input_schema::<T>());
+        self.request_content_type = "application/json";
+        self
+    }
+
+    /// Describe multipart input for low-level handlers. Prefer `Multipart<T>` in `#[endpoint]`.
+    pub fn multipart_input<T: ApiSchema>(mut self) -> Self {
+        self.request_body = Some(input_schema::<T>());
+        self.request_content_type = "multipart/form-data";
         self
     }
 
@@ -105,6 +115,11 @@ pub trait ApiInput {
 impl<T: kouga_validation::Request + ApiSchema> ApiInput for Validated<T> {
     fn describe(operation: Operation) -> Operation {
         operation.json_input::<T>()
+    }
+}
+impl<T: ApiSchema> ApiInput for Multipart<T> {
+    fn describe(operation: Operation) -> Operation {
+        operation.multipart_input::<T>()
     }
 }
 impl<T: schemars::JsonSchema> ApiInput for Path<T> {
