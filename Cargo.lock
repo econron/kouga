@@ -1189,6 +1189,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kouga-test"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "kouga-db",
+ "kouga-http",
+ "kouga-migration",
+ "sqlx",
+ "tokio",
+ "tower",
+ "uuid",
+]
+
+[[package]]
 name = "kouga-validation"
 version = "0.1.0"
 dependencies = [

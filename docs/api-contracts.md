@@ -261,6 +261,8 @@ versionは14桁UTC、up必須。downが欠落・空白/コメントだけなら�
 
 rollbackは全対象のdown/checksumを事前確認してから変更する。repairはdirtyに限定し理由必須、実DB修復を行わない。SQL migrationの追加は各機能が所有し、管理CLIとschema dumpはT06。通常サーバーはmigrationを実行しない。
 
+**T17テスト支援**: `kouga_test::TestClient::new(axum::Router)`の`send(Request<Body>)`は実ポートを開かず通常のrouter/middlewareを実行する。認証主体は通常のAuthorizationヘッダーで渡し、認可をバイパスしない。`kouga_test::TestDb::from_env(migration_dir)`は`TEST_DATABASE_URL`必須、`DATABASE_URL`と同一文字列を拒否し、テストごとの専用PostgreSQL schemaにmigrationを適用する。`db()`からpoolを借り、`close().await`でschemaを削除する。直接URLを渡す`connect(url, migration_dir)`はテストの管理用入口。panic等で`close`に達しない場合はschemaが残るため、専用テストDBを使用する。
+
 ## 9. Job / worker / mailer
 
 ```rust,ignore
