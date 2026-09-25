@@ -1,0 +1,19 @@
+[package]
+name = "kouga-auth"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+argon2 = "=0.5.3"
+kouga-core.workspace = true
+kouga-db = { path = "../kouga-db" }
+kouga-model = { path = "../kouga-model" }
+sha2 = "=0.10.9"
+sqlx = { version = "=0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "uuid", "chrono"] }
+uuid = { version = "=1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+kouga-test = { path = "../kouga-test" }
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }

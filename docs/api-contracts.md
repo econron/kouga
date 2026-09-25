@@ -196,6 +196,8 @@ T10時点の登録APIは`Router::middleware(fn)`、`Router::group("/prefix")?.mi
 
 timeoutはhandlerの応答生成からbody stream完了までの絶対期限。ヘッダー送信前の期限切れは504共通エラー、送信後の期限切れはbody streamをエラーで中断する（送信済みstatusは変更できない）。同時実行枠はbody完了・drop・期限切れのいずれかで解放する。信頼プロキシの`X-Forwarded-For`は複数ヘッダー行を結合した順序で右端から検証する。
 
+**T18認証API**: `kouga-auth`はHTTPから独立し、`hash_password`/`verify_password`（Argon2id）、`issue_token(db, user_id, ttl)`、`authenticate(db, token) -> Result<Option<CurrentUser>, DbError>`、`revoke_token`、`revoke_user_tokens`、`authorize(actor, action, resource, policy)`、`owned_by(query, owner_column, actor)`を公開する。`CurrentUser { id: Uuid }`はgRPCでも共有できる。`Decision::{Permit,Deny,Hide}`はそれぞれ許可/403/404。トークンDB表は`kouga-auth/migrations/`からアプリmigrationへ組み込む。ユーザー表はアプリが持つ。HTTPは`kouga_http::auth::require_bearer(|state| &state.db)`を`Router::middleware`へ登録し、既存`bearer_auth`を通してsecurity metadataも付与する。DB障害は503、未認証は`WWW-Authenticate: Bearer`付き401。更新・削除は所有者scopeで同じtransaction内の`for_update`取得後に実施し、リクエストのowner IDを信用しない。
+
 ## 7. DB・model・query
 
 `Db = sqlx::PgPool`、`Transaction<'a> = sqlx::Transaction<'a, Postgres>`を再公開する。独自executor traitは作らない。各操作は`A: sqlx::Acquire<'c, Database=Postgres> + Send`を受け、先頭でacquireして得たconnectionを操作終了まで使う。内部helperは`&mut PgConnection`を取る。これにより`&db`と`&mut tx`を共通で扱う。複数SQLの途中でpoolへ戻らない。
