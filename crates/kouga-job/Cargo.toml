@@ -1,0 +1,10 @@
+[package]
+name = "kouga-job"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+kouga-job-derive = { path = "../kouga-job-derive" }
