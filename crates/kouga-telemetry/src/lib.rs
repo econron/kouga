@@ -6,6 +6,8 @@ use opentelemetry_sdk::{Resource, trace::Sampler};
 use std::{collections::HashMap, env, error::Error as StdError, fmt, time::Duration};
 use tracing_subscriber::{EnvFilter, Layer, prelude::*};
 
+pub use kouga_runtime::{Health, HealthStatus};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sampling {
     AlwaysOn,
@@ -164,7 +166,8 @@ impl Telemetry {
     /// Call once from a binary, instead of `kouga_runtime::logging::init`.
     pub fn init(config: TelemetryConfig) -> Result<Self, TelemetryError> {
         config.validate()?;
-        let filter = EnvFilter::try_new(&config.log_filter)
+        // SDK reports the first queue drop immediately and the total on shutdown.
+        let filter = EnvFilter::try_new(format!("{},opentelemetry_sdk=warn", config.log_filter))
             .map_err(|_| TelemetryError::Invalid("RUST_LOG"))?;
         let otlp_log_filter = EnvFilter::try_new(&config.log_filter)
             .map_err(|_| TelemetryError::Invalid("RUST_LOG"))?;

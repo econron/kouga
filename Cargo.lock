@@ -915,12 +915,14 @@ dependencies = [
 name = "kouga-telemetry"
 version = "0.1.0"
 dependencies = [
+ "kouga-db",
  "kouga-runtime",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "percent-encoding",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
@@ -1060,6 +1062,7 @@ dependencies = [
  "js-sys",
  "pin-project-lite",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
