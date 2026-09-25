@@ -549,7 +549,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **今回含めないこと**: SMTP処理、クラウドの起動スケジューラー。
 
-**検証結果・後続への引き継ぎ**: `kouga-worker`を追加。`Worker::new/register/run_forever/run_once/cancel_waiting/failed/retry_failed`、`JobContext`、`WorkerOptions`、`JobError`を公開。T20 schemaに追加する失敗理由列・期限切れlease indexのSQL migrationを同梱した。PostgreSQL 17で複数worker、retry/dead、未知・不正payload隔離、強制終了後再取得、旧lease拒否、待機中取消、手動再投入、終了猶予を検証。Rust 1.94.0のfmt、clippy、実DBを使うworkspace全テスト通過。CLI、SMTP、クラウド起動は未実装。SIGTERM実信号と長期高負荷は未検証。
+**検証結果・後続への引き継ぎ**: `kouga-worker`を追加。`Worker::new/register/run_forever/run_once/cancel_waiting/failed/retry_failed`、`JobContext`、`WorkerOptions`、`JobError`を公開。T20 schemaに追加する失敗理由列・期限切れlease indexのSQL migrationを同梱した。PostgreSQL 17で複数worker、retry/dead、未知・不正payload隔離、強制終了後再取得、旧lease拒否、待機中取消、手動再投入、終了猶予を検証。追加レビューで、one-shot期限中の遅いDB claimを中止し、claim直後も期限を確認して未実行jobのleaseを返すよう修正。shutdown tokenをhandlerへ伝播し、heartbeat DB障害・タイムアウトではhandlerに取消を通知して短く待ち、他jobも終了猶予内でdrainしてからエラーを返す。独立したPostgreSQL 17でテーブルロック中の期限切れ、handler取消受信、2件実行中のDB停止を再現。Rust 1.94.0のfmt、clippy、workspace全テスト、T21実DBテスト通過。追加修正前には実DBを使うworkspace全テストも通過したが、最終修正後の同テストは既存T04の200ms接続制限で2回失敗したため、T21実DBテストとDB環境変数なしのworkspaceテストで個別に確認した。CLI、SMTP、クラウド起動は未実装。SIGTERM実信号と長期高負荷は未検証。
 
 ### T22 — mailer・SMTP・メールテスト支援
 

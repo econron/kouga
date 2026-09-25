@@ -321,10 +321,12 @@ async fn postgres_worker_lifecycle() {
         .unwrap();
     assert_eq!(status, "succeeded");
 
-    let mut graceful = Worker::new(db.clone(), Arc::new(()), options()).unwrap();
+    let cancelled = Arc::new(AtomicUsize::new(0));
+    let mut graceful = Worker::new(db.clone(), cancelled.clone(), options()).unwrap();
     graceful
-        .register::<Slow>(|_: Slow, _: JobContext<()>| async {
-            tokio::time::sleep(Duration::from_millis(80)).await;
+        .register::<Slow>(|_: Slow, ctx: JobContext<AtomicUsize>| async move {
+            ctx.cancellation.cancelled().await;
+            ctx.state.fetch_add(1, Ordering::SeqCst);
             Ok(())
         })
         .unwrap();
@@ -346,6 +348,7 @@ async fn postgres_worker_lifecycle() {
     }
     stop.cancel();
     assert_eq!(graceful_handle.await.unwrap().unwrap().succeeded, 1);
+    assert_eq!(cancelled.load(Ordering::SeqCst), 1);
     assert_eq!(
         Worker::new(db.clone(), Arc::new(()), options())
             .unwrap()
@@ -384,7 +387,61 @@ async fn postgres_worker_lifecycle() {
         1
     );
 
+    let deadline_calls = Arc::new(AtomicUsize::new(0));
+    let mut deadline_worker = Worker::new(db.clone(), deadline_calls.clone(), options()).unwrap();
+    deadline_worker
+        .register::<Fast>(|_: Fast, ctx: JobContext<AtomicUsize>| async move {
+            ctx.state.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+    Fast { value: 3 }.enqueue(&db).await.unwrap();
+    let mut lock = db.begin().await.unwrap();
+    lock.execute("LOCK TABLE kouga_jobs IN ACCESS EXCLUSIVE MODE")
+        .await
+        .unwrap();
+    let blocked = tokio::spawn(async move {
+        deadline_worker
+            .run_once(1, Duration::from_millis(30), CancellationToken::new())
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    lock.rollback().await.unwrap();
+    assert_eq!(blocked.await.unwrap().unwrap().claimed, 0);
+    assert_eq!(deadline_calls.load(Ordering::SeqCst), 0);
+
+    let heartbeats_seen = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(AtomicUsize::new(0));
+    let mut heartbeat_worker = Worker::new(db.clone(), heartbeats_seen.clone(), options()).unwrap();
+    heartbeat_worker
+        .register::<Slow>({
+            let started = started.clone();
+            move |_: Slow, ctx: JobContext<AtomicUsize>| {
+                let started = started.clone();
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    ctx.cancellation.cancelled().await;
+                    ctx.state.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
+        })
+        .unwrap();
+    Slow.enqueue(&db).await.unwrap();
+    Slow.enqueue(&db).await.unwrap();
+    let heartbeat_handle =
+        tokio::spawn(async move { heartbeat_worker.run_forever(CancellationToken::new()).await });
+    for _ in 0..50 {
+        if started.load(Ordering::SeqCst) == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+
     db.close().await;
+    assert!(heartbeat_handle.await.unwrap().is_err());
+    assert_eq!(heartbeats_seen.load(Ordering::SeqCst), 2);
     admin
         .execute(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
         .await

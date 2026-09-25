@@ -45,6 +45,7 @@ pub enum WorkerError {
     InvalidConfig(&'static str),
     DuplicateHandler,
     Database(kouga_db::DbError),
+    LeaseUnavailable,
     Task(tokio::task::JoinError),
     ShutdownTimeout,
 }
@@ -55,6 +56,7 @@ impl std::fmt::Display for WorkerError {
             Self::InvalidConfig(_) => f.write_str("invalid worker configuration"),
             Self::DuplicateHandler => f.write_str("duplicate job handler"),
             Self::Database(_) => f.write_str("worker database error"),
+            Self::LeaseUnavailable => f.write_str("worker lease renewal timed out"),
             Self::Task(_) => f.write_str("worker task failed"),
             Self::ShutdownTimeout => f.write_str("worker shutdown timed out"),
         }
@@ -254,6 +256,8 @@ impl<S: Send + Sync + 'static> Worker<S> {
         let mut tasks = JoinSet::new();
         let mut report = RunReport::default();
         let mut stopping = false;
+        let mut error = None;
+        let stop = cancellation.child_token();
         loop {
             if cancellation.is_cancelled()
                 || once.is_some_and(|(max, deadline)| {
@@ -264,31 +268,72 @@ impl<S: Send + Sync + 'static> Worker<S> {
             }
             if !stopping && tasks.len() < self.options.concurrency {
                 let claim = tokio::select! {
-                    _ = cancellation.cancelled() => { stopping = true; None }
-                    result = claim(&self.db, &self.options) => result?,
+                    _ = cancellation.cancelled() => { stopping = true; Ok(None) }
+                    _ = async {
+                        if let Some((_, deadline)) = once {
+                            tokio::time::sleep_until(deadline).await;
+                        } else {
+                            std::future::pending::<()>().await;
+                        }
+                    } => { stopping = true; Ok(None) }
+                    result = claim(&self.db, &self.options) => result,
+                };
+                let claim = match claim {
+                    Ok(claim) => claim,
+                    Err(err) => {
+                        error = Some(err);
+                        stop.cancel();
+                        stopping = true;
+                        None
+                    }
                 };
                 if let Some(job) = claim {
-                    report.claimed += 1;
-                    let db = self.db.clone();
-                    let state = self.state.clone();
-                    let options = self.options.clone();
-                    let handlers = handlers.clone();
-                    tasks.spawn(async move { process(db, state, handlers, options, job).await });
-                    continue;
+                    if cancellation.is_cancelled()
+                        || once.is_some_and(|(_, deadline)| Instant::now() >= deadline)
+                    {
+                        match tokio::time::timeout(
+                            self.options.shutdown_grace,
+                            release(&self.db, &job),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => {}
+                            Ok(Err(err)) => {
+                                error = Some(err);
+                                stop.cancel();
+                            }
+                            Err(_) => {
+                                error = Some(WorkerError::LeaseUnavailable);
+                                stop.cancel();
+                            }
+                        }
+                        stopping = true;
+                    } else {
+                        report.claimed += 1;
+                        let db = self.db.clone();
+                        let state = self.state.clone();
+                        let options = self.options.clone();
+                        let handlers = handlers.clone();
+                        let job_stop = stop.child_token();
+                        tasks.spawn(async move {
+                            process(db, state, handlers, options, job, job_stop).await
+                        });
+                        continue;
+                    }
                 }
                 if once.is_some() {
                     stopping = true;
                 }
             }
             if stopping && tasks.is_empty() {
-                return Ok(report);
+                return error.map_or(Ok(report), Err);
             }
             if stopping {
                 let drain = async {
                     while let Some(result) = tasks.join_next().await {
-                        report.add(result??);
+                        record_result(&mut report, &mut error, result);
                     }
-                    Ok::<_, WorkerError>(report)
+                    error.map_or(Ok(report), Err)
                 };
                 return match tokio::time::timeout(self.options.shutdown_grace, drain).await {
                     Ok(result) => result,
@@ -300,7 +345,12 @@ impl<S: Send + Sync + 'static> Worker<S> {
             }
             tokio::select! {
                 _ = cancellation.cancelled() => stopping = true,
-                result = tasks.join_next(), if !tasks.is_empty() => { if let Some(result) = result { report.add(result??); } },
+                result = tasks.join_next(), if !tasks.is_empty() => {
+                    if let Some(result) = result {
+                        record_result(&mut report, &mut error, result);
+                        if error.is_some() { stop.cancel(); stopping = true; }
+                    }
+                },
                 _ = tokio::time::sleep(self.options.poll_interval) => {},
             }
         }
@@ -325,6 +375,28 @@ impl<S: Send + Sync + 'static> Worker<S> {
             .bind(id).execute(&self.db).await?.rows_affected();
         Ok(changed == 1)
     }
+}
+
+fn record_result(
+    report: &mut RunReport,
+    error: &mut Option<WorkerError>,
+    result: Result<Result<Outcome, WorkerError>, tokio::task::JoinError>,
+) {
+    match result {
+        Ok(Ok(outcome)) => report.add(outcome),
+        Ok(Err(err)) => {
+            error.get_or_insert(err);
+        }
+        Err(err) => {
+            error.get_or_insert(err.into());
+        }
+    }
+}
+
+async fn release(db: &Db, job: &Claimed) -> Result<(), WorkerError> {
+    sqlx::query("UPDATE kouga_jobs SET status='pending', attempt=attempt-1, lease_token=NULL, lease_until=NULL, updated_at=now() WHERE id=$1 AND lease_token=$2 AND status='running'")
+        .bind(job.id).bind(job.lease_token).execute(db).await?;
+    Ok(())
 }
 
 impl RunReport {
@@ -363,11 +435,11 @@ async fn process<S: Send + Sync + 'static>(
     handlers: Arc<HashMap<(String, i32), Handler<S>>>,
     options: WorkerOptions,
     job: Claimed,
+    cancellation: CancellationToken,
 ) -> Result<Outcome, WorkerError> {
     let Some(handler) = handlers.get(&(job.name.clone(), job.version)) else {
         return finish(&db, &job, "quarantined", "unknown job kind", None).await;
     };
-    let cancellation = CancellationToken::new();
     let ctx = JobContext {
         state,
         job_id: job.id,
@@ -383,8 +455,19 @@ async fn process<S: Send + Sync + 'static>(
             result = &mut run => break result,
             _ = ticks.tick() => {
                 let lease_ms = i64::try_from(options.lease_duration.as_millis()).map_err(|_| WorkerError::InvalidConfig("lease duration"))?;
-                let changed = sqlx::query("UPDATE kouga_jobs SET lease_until=now()+($3::bigint * interval '1 millisecond'), updated_at=now() WHERE id=$1 AND lease_token=$2 AND status='running' AND lease_until>now()")
-                    .bind(job.id).bind(job.lease_token).bind(lease_ms).execute(&db).await?;
+                let changed = match tokio::time::timeout(every, sqlx::query("UPDATE kouga_jobs SET lease_until=now()+($3::bigint * interval '1 millisecond'), updated_at=now() WHERE id=$1 AND lease_token=$2 AND status='running' AND lease_until>now()")
+                    .bind(job.id).bind(job.lease_token).bind(lease_ms).execute(&db)).await {
+                    Ok(Ok(changed)) => changed,
+                    failed => {
+                        cancellation.cancel();
+                        let _ = tokio::time::timeout(options.shutdown_grace.min(every), &mut run).await;
+                        return Err(match failed {
+                            Ok(Err(err)) => err.into(),
+                            Err(_) => WorkerError::LeaseUnavailable,
+                            Ok(Ok(_)) => unreachable!(),
+                        });
+                    }
+                };
                 if changed.rows_affected() == 0 { cancellation.cancel(); return Ok(Outcome::LostLease); }
             }
         }
