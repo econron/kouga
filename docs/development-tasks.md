@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T18・T20〜T26・T28統合済み。T19・T27は作業中
+状態: T00〜T18・T20〜T26・T28統合済み。T19・T27・T29は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -68,7 +68,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 作業中 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
-| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
+| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 作業中 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
@@ -704,10 +704,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T29 — HTTP/gRPC同居と追加generator
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: Codex
 - ブランチ: `task/T29-grpc-coexistence`
-- worktree: `.worktrees/T29-grpc-coexistence`（作成前）
+- worktree: `.worktrees/T29-grpc-coexistence`
 - 依存: T28、T15、T16
 - 対応仕様: 4.17、4.19、利用者ガイドHTTPとgRPC
 - 主担当領域: 入口追加CLI・gRPCテンプレート
