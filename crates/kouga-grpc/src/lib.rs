@@ -5,7 +5,7 @@ use kouga_auth::{CurrentUser, authenticate};
 use kouga_core::{Error, ErrorKind};
 use kouga_db::Db;
 use kouga_validation::{Request, Validated, validate};
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{error::Error as StdError, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tonic::{Code, Status, metadata::MetadataMap};
 
@@ -32,6 +32,21 @@ pub fn normalize_message_size_status<B>(mut response: http::Response<B>) -> http
         );
     }
     response
+}
+
+/// Normalize only tonic's client-local timeout; a server cannot change an error returned
+/// before its response is received. Apply at the generated client boundary in T29.
+pub fn normalize_client_timeout(status: Status) -> Status {
+    if status.code() == Code::Cancelled {
+        let mut source = StdError::source(&status);
+        while let Some(error) = source {
+            if error.is::<tonic::TimeoutExpired>() {
+                return Status::deadline_exceeded("Deadline exceeded");
+            }
+            source = error.source();
+        }
+    }
+    status
 }
 
 /// Bound handler work and return DEADLINE_EXCEEDED; dropping the future cancels in-flight work.
@@ -132,5 +147,9 @@ mod tests {
         let unrelated =
             normalize_message_size_status(Status::out_of_range("index").into_http::<()>());
         assert_eq!(unrelated.headers()[Status::GRPC_STATUS], "11");
+        assert_eq!(
+            normalize_client_timeout(Status::cancelled("cancelled")).code(),
+            Code::Cancelled
+        );
     }
 }

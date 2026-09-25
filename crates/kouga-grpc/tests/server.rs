@@ -1,8 +1,8 @@
 use kouga_auth::{Decision, authorize, issue_token};
 use kouga_core::{Error, ErrorKind, Patch};
 use kouga_grpc::{
-    InFlight, normalize_message_size_status, require_bearer, to_status, validate_input,
-    within_deadline,
+    InFlight, normalize_client_timeout, normalize_message_size_status, require_bearer, to_status,
+    validate_input, within_deadline,
 };
 use kouga_model::{Model, find};
 use kouga_test::TestDb;
@@ -265,11 +265,8 @@ async fn real_server_auth_validation_policy_limits_and_transaction()
     );
     let mut client_deadline = call("slow", &token);
     client_deadline.set_timeout(Duration::from_millis(10));
-    assert_eq!(
-        client.create(client_deadline).await.unwrap_err().code(),
-        tonic::Code::Cancelled,
-        "tonic's native grpc-timeout maps to CANCELLED before the handler can respond"
-    );
+    let timeout = normalize_client_timeout(client.create(client_deadline).await.unwrap_err());
+    assert_eq!(timeout.code(), tonic::Code::DeadlineExceeded, "{timeout:?}");
     assert_eq!(
         client.create(call("one", &token)).await?.into_inner().title,
         "one"

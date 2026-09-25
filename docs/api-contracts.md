@@ -342,7 +342,7 @@ CreateTaskInputはdomainの型でrpc/HTTPへ依存しない。公開auth lookup�
 
 PATCHは`.proto`のoptionalまたはoneofでpresenceを表す。nullable更新はoneofの「値/明示null」とoneof自体の不在をPatchへ変換する。scalar既定値から省略を推測しない。deadline/cancel/サイズ/過負荷とstatus変換を各RPCへ適用する。同一workspaceでHTTPと併用し、別binary/port/imageが標準。
 
-**T28の基盤API**: `kouga-grpc`は`require_bearer(metadata, db)`、`validate_input(input, context)`、`to_status(error)`、`InFlight::try_acquire()`、`within_deadline(limit, future)`を提供する。生成serviceごとにtonicの`max_decoding_message_size`を指定し、`Server::builder().layer(tower::util::MapResponseLayer::new(kouga_grpc::normalize_message_size_status))`でtonicの受信サイズ超過`OUT_OF_RANGE`を契約どおり`RESOURCE_EXHAUSTED`へ変換する。`tracing` spanは認証・検証入口にある。`.proto`と`build.rs`はT29でアプリに生成する。現状tonic 0.14のネイティブ`grpc-timeout`は`CANCELLED`を返すため、クライアント指定期限の`DEADLINE_EXCEEDED`対応は未完了。
+**T28の基盤API**: `kouga-grpc`は`require_bearer(metadata, db)`、`validate_input(input, context)`、`to_status(error)`、`InFlight::try_acquire()`、`within_deadline(limit, future)`を提供する。生成serviceごとにtonicの`max_decoding_message_size`を指定し、`Server::builder().layer(tower::util::MapResponseLayer::new(kouga_grpc::normalize_message_size_status))`でtonicの受信サイズ超過`OUT_OF_RANGE`を契約どおり`RESOURCE_EXHAUSTED`へ変換する。tonicクライアントが応答前に返すローカルtimeoutだけは`normalize_client_timeout(status)`で`DEADLINE_EXCEEDED`へ正規化する（T29のクライアント入口で適用）。`tracing` spanは認証・検証入口にある。`.proto`と`build.rs`はT29でアプリに生成する。
 
 ## 12. 実装への引き継ぎと並行作業
 
