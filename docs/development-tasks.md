@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T34統合済み。T34監査で初版未達と判定し、T35以降で残件を追跡
+状態: T00〜T39統合済み。T40はレビュー待ち。T34/T40監査で初版未達と判定し、T41以降で残件を追跡
 対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -75,11 +75,14 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 統合済み |
 | T34 | 初版の横断検証・計測 | T33 | 統合済み（初版未達） |
 | T35 | 認可付き業務サンプル基盤 | T34 | 統合済み |
-| T36 | queue再起動・旧payload互換 | T35 | レビュー待ち |
-| T37 | 添付・WebSocket業務連携 | T35 | 未着手 |
-| T38 | 共通業務処理へのgRPC入口 | T35 | 未着手 |
+| T36 | queue再起動・旧payload互換 | T35 | 統合済み |
+| T37 | 添付・WebSocket業務連携 | T35 | 統合済み |
+| T38 | 共通業務処理へのgRPC入口 | T35 | 統合済み |
 | T39 | DB管理CLIの残項目 | T34 | 統合済み |
-| T40 | 初版の残件再監査 | T36、T37、T38、T39 | 未着手 |
+| T40 | 初版の残件再監査 | T36、T37、T38、T39 | レビュー待ち |
+| T41 | Taskboard全役割の独立イメージ | T40 | 未着手 |
+| T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 未着手 |
+| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -896,6 +899,8 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 **検証**: Taskboard生成fixtureでRust 1.94のfmt、workspace Clippy `-D warnings`、workspace全テストを通過（実PostgreSQLとローカルSMTP）。Task/jobの同時commit・enqueue拒否時rollback、実worker kill→lease再取得・attempt 2・DB効果1回、v1 payloadの新worker処理、SMTPの一時失敗→再試行成功、所有者不一致の恒久失敗を確認。`cargo tree`でHTTP packageに`kouga-mailer`/`kouga-worker`が無く、worker packageに`kouga-http`が無いことを確認。Kouga本体workspaceのfmt/Clippyも通過。本体workspace全テストは共有ディスク空き約2GiBのため新規リンクを避け、統合後に再実行する。
 
+**統合後追記（T40）**: T37/T38を含む最新mainから再生成した単一fixtureの実PostgreSQL/loopback SMTP付きworkspace全テストが成功。本体workspace全テスト不足はT37/T38の統合検証で解消済み。旧payload・強制終了・DB効果一回のfixture試験もこの再実行で成功した。
+
 ### T37 — 添付・WebSocket業務連携
 
 - 状態: レビュー待ち（main未統合）
@@ -940,12 +945,50 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T40 — 初版の残件再監査
 
-- 状態: 未着手
+- 状態: レビュー待ち
 - ブランチ: `task/T40-release-closure`
-- worktree: `.worktrees/T40-release-closure`（作成前）
+- worktree: `.worktrees/T40-release-closure`
 - 依存: T36、T37、T38、T39
 - 対応仕様: 第5・6節、全受け入れ条件
 
 **実装すること**: T34の[監査表](release-verification.md)を実証に基づいて更新し、単一生成アプリの全シナリオ、実サービス・依存グラフ・配布/互換性方針を再判定する。
 
 **完了条件**: 必須の未達が残れば「初版完成」とせず、追加の実装タスクを明示する。固定条件の性能測定を再実施し、回帰・制約・未検証を記録する。公開・deployは行わない。
+
+**T40検証・判定**: [現行の横断再監査](release-verification.md)に第5節、基本22条件と追加条件、第6節14シナリオの証拠/未達を記録。最新CLIで単一Taskboardを再生成し、Rust 1.94のfmt、生成workspace clippy `-D warnings`、実PostgreSQL/ローカルSMTP/別Channel processを含む生成workspace全テストを通過。Kouga本体fmt/clippy `-D warnings`も成功。T40はRust実装を変更しない監査/計測タスクのため、本体workspace全テストは重複再実行せず、T37/T38統合時の実DB付き全テストを証拠とする。通常依存treeのHTTP/gRPC/worker分離を確認。HTTP/admin/gRPC/auth-mail-workerの統合版Docker release imageを個別ビルドし、非root/read-onlyでadminの5 migration、HTTP health/認証付きCRUD、HTTP発行tokenで別gRPCコンテナの業務RPC、workerワンショットexit 0、HTTP/gRPCのSIGTERM exit 0を確認。固定条件のk6 4 VU×15秒を再実施（数値は監査文書）。Taskboard独自通知worker/Channel/添付清掃のDocker target欠落、Taskboard OTel/seed/OpenAPI差分/DB停止等、実S3・公開互換性は必須未達。T41〜T43を後続とし、**初版完成とは判定しない**。push/deployはしていない。
+
+### T41 — Taskboard全役割の独立イメージ
+
+- 状態: 未着手
+- ブランチ: `task/T41-taskboard-images`
+- worktree: `.worktrees/T41-taskboard-images`
+- 依存: T40
+- 対応仕様: 3.2〜3.3、4.10、4.12〜4.13、第5節、第6節12・14
+
+**実装すること**: 生成Dockerfileをアプリ固有binaryにも拡張できる公開手順/設定にし、Taskboardの`task-notice-worker`、`taskboard-channel`、`taskboard-storage-cleanup`をHTTP/gRPC/auth-mail-worker/adminから独立したtargetとして再生成可能にする。必要なコードとCA/DNSだけを含め、不要なHTTP/SMTP/gRPC依存を混入させない。
+
+**完了条件**: 全targetをLinux/arm64で個別release buildし、非root・read-only root、PORT/終了シグナル、外部DB・SMTP・共有storageで実起動。Task作成→別通知worker→mail、別Channelへの通知、添付清掃ワンショットと旧payload互換更新をイメージ間で確認。各展開/圧縮サイズと通常依存treeを記録する。クラウドdeploy/pushは行わない。
+
+### T42 — 単一アプリの観測・OpenAPI・運用経路
+
+- 状態: 未着手
+- ブランチ: `task/T42-taskboard-observability`
+- worktree: `.worktrees/T42-taskboard-observability`
+- 依存: T40（T41と並行可能）
+- 対応仕様: 4.2、4.15〜4.18、第5節、第6節1・10・11・13
+
+**実装すること**: Taskboardへ登録済みseed、DB readiness、複数HTTP process共有rate-limit、OTel exporterと独自span/log/metricsを接続。HTTP/gRPC/worker別`service.name`とjob contextをテストCollectorで追い、Collector停止中も上限付きbuffer/業務継続、ワンショットflushを検証する。CRUD/認証/添付を含む生成OpenAPIのschema・開発UI・本番非公開、Request/認証変更後の`kouga openapi check`失敗→再生成成功を通し試験にする。
+
+**完了条件**: 同一生成アプリでDB停止時readiness/副作用なし、rate超過、終了処理、同時HTTP/gRPC/workerのcontext分離と機密非記録を確認。seedとOpenAPIの文書化コマンドを実行し、変更時差分をCIで検知する。性能再計測は環境と反復回数を固定して記録する。
+
+### T43 — 実ストレージ・境界/障害横断・配布方針
+
+- 状態: 未着手
+- ブランチ: `task/T43-release-hardening`
+- worktree: `.worktrees/T43-release-hardening`
+- 依存: T41、T42
+- 対応仕様: 4.4、4.9、4.12、第5・6節、公開前の互換性方針
+
+**実装すること**: TaskboardのS3互換storageを実サービスで確認し、複数process/同時更新、worker/SMTP/DB/Collector障害・再起動、添付付きメール、タイムアウト後の副作用と境界上限を統合イメージで再検証する。ローカル絶対path依存を前提としない配布方式、Kouga/生成コード/ジョブpayloadの互換性・更新順序・サポート期間を定め、公開前のライセンス/依存素材監査を行う。
+
+**完了条件**: 第5節の制約と第6節14シナリオを単一アプリで再監査し、未達/実クラウド未検証を明示。Rust 1.94、Linuxイメージ、実サービス、性能の再現手順を残す。実クラウドdeployや公開は別途明示依頼があるまで行わない。
