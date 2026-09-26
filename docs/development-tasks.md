@@ -66,7 +66,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T24 | アップロード・ストレージ | T10、T18、T21 | 作業中 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 作業中 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
-| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | レビュー待ち（通し試験未完） |
+| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了・レビュー待ち |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
@@ -662,7 +662,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T27 — 処理間のtrace連携
 
-- 状態: レビュー待ち（実サービス間の通し試験は未完）
+- 状態: 完了・レビュー待ち
 - 担当者: Codex
 - ブランチ: `task/T27-trace-propagation`
 - worktree: `.worktrees/T27-trace-propagation`
@@ -674,12 +674,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] テストCollectorで標準/custom spanとjobのlink、試行番号、別service名を確認する（単一serviceのOTLP復号は確認済み）。
-- [ ] 並行context混入、信頼しない入力、秘密情報、contextなしの既存ジョブ、ワンショットflushを検証する（並行分離、無効入力、flushは確認済み）。
+- [x] テストCollectorで標準/custom spanとjobのlink、試行番号、別service名を確認する。
+- [x] 並行context混入、信頼しない入力、秘密情報、contextなしの既存ジョブ、ワンショットflushを検証する。
 
 **今回含めないこと**: 業務payloadへのtrace情報の混入、監査ログの配送保証。
 
-**検証結果・後続への引き継ぎ**: HTTP/gRPC入口、model DB、queue metadata、worker試行spanと投入spanへのlink、mail送信を`tracing`で接続。HTTP/gRPC/queue/workerのOTelは`otel` featureで任意。HTTPの外部親は指定した直接TCP peerのみ許可。模擬CollectorのOTLP protobuf復号でcustom span、サービス名、ジョブlink、試行1/2の別span、メール子span、並行context分離、無効な親の拒否、終了時flushを確認。Rust 1.94のfmt、default workspaceと対象all-featuresのclippy、workspace全テストを通過。HTTP/queue/workerの既定依存グラフにOTelがないことを確認。PostgreSQLを伴うHTTP→別workerの実サービス通し試験、別service.nameの照合、秘匿の網羅試験は未検証。生SQLと任意の外向きHTTPクライアントは自動計測しない。
+**検証結果・後続への引き継ぎ**: `48f1e6e`。HTTP/gRPC入口、model DB、queue metadata、worker試行spanと投入spanへのlink、mail送信を`tracing`で接続。HTTP/gRPC/queue/workerのOTelは`otel` featureで任意。HTTPの外部親は指定した直接TCP peerのみ許可。`KOUGA_TEST_DATABASE_URL=... cargo test -p kouga-worker --features otel --test trace_flow`をPostgreSQL 17で実行し、別子プロセスのHTTP/workerから模擬Collectorへ送ったOTLP protobufを復号して別`service.name`、HTTP→model DB→queue投入、retry試行1/2の別spanとlink、worker→mailの子span、並行requestのcontext分離、無効/信頼外親の拒否、機密文字列のtrace/log/stdout非記録、trace contextがない既存ジョブ、ワンショット終了時flushを確認。SQLx `Acquire`のSend推論制約に対し公開model/queueの汎用DB操作を明示的な`impl Future + Send`へ変更し、同じHTTP handlerでmodel作成とqueue投入を実行できることを確認。Rust 1.94のfmt、all-features workspace clippy、workspace全テストも通過。HTTP/queue/workerの既定依存グラフにOTelがないことを確認。生SQLと任意の外向きHTTPクライアントは自動計測しない。実SMTP配送とgRPC→workerの通し試験は別タスクで扱う。
 
 ### T28 — gRPC入口・Protobuf・handler
 

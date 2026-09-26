@@ -1589,15 +1589,23 @@ dependencies = [
 name = "kouga-worker"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
+ "http",
  "kouga-db",
+ "kouga-http",
  "kouga-job",
+ "kouga-mailer",
+ "kouga-model",
  "kouga-queue",
  "kouga-telemetry",
+ "opentelemetry-proto",
+ "prost",
  "serde_json",
  "sqlx",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "uuid",
 ]

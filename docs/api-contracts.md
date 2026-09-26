@@ -326,6 +326,8 @@ T26の`Telemetry::init(config)`はguardとproviderを保持し、`shutdown(deadl
 
 T27ではHTTP/gRPC/queue/workerの`otel` featureが`kouga-telemetry`を任意追加する。HTTPは`HttpOptions::trusted_trace_peers`で直接TCP peerを明示したときだけtraceparent/tracestateを親として採用する。gRPCは生成handler内で`kouga_grpc::trace_request(metadata, trusted_peer, work)`を使う。queueは現在spanを既存のtrace metadata列へ自動保存し、workerは試行ごとの新規spanから投入spanへlinkする。`tracing` spanのasync伝播に`Instrument`を使い、workerバイナリは`run_once`後に`Telemetry::shutdown`を呼ぶ。生SQLや任意の外部HTTPクライアントは利用者が個別にspan/伝播を追加する。
 
+SQLxの汎用`Acquire<'c>`を使う公開modelの取得・CRUD・preloadとqueueのenqueue系は`impl Future + Send`を返す。これによりAxumの`Send` handler内でpool/transactionからそのまま`.await`でき、呼び出し記法は変わらない。
+
 ## 11. gRPCと生成コード
 
 `.proto`→tonic-prost-build（build依存のみ）→`crates/rpc`。handlerはtonic生成service traitを実装し、`tonic::Request<rpc::Input>`からmetadata認証→業務入力へTryFrom→共有validate→業務関数の順に呼ぶ。非同期DB認証を同期interceptorへ押し込まず、handler wrapperでawaitする。

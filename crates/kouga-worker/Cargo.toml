@@ -21,5 +21,14 @@ kouga-telemetry = { path = "../kouga-telemetry", optional = true }
 otel = ["dep:kouga-telemetry"]
 
 [dev-dependencies]
-kouga-queue = { path = "../kouga-queue" }
+kouga-queue = { path = "../kouga-queue", features = ["otel"] }
+kouga-http = { path = "../kouga-http", features = ["otel"] }
+kouga-model = { path = "../kouga-model" }
+kouga-mailer = { path = "../kouga-mailer" }
+kouga-telemetry = { path = "../kouga-telemetry" }
+axum = { version = "=0.8.9", default-features = false, features = ["http1"] }
+http = "=1.5.0"
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "trace"] }
+prost = "=0.14.4"
+tower = { version = "=0.5.3", features = ["util"] }
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "time", "sync"] }

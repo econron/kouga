@@ -397,11 +397,13 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         relation_functions.push(quote!(pub fn #relation_name() -> #descriptor_type { #factory }));
         relation_methods.push(quote! {
             #query_method
-            #crud_visibility async fn #relation_name<'c, A>(&self, db: A) -> Result<<#descriptor_type as ::kouga_model::Relation<Self>>::Related, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
-                let mut conn = db.acquire().await.map_err(::kouga_model::db::DbError::from)?;
-                let mut values = ::kouga_model::Relation::load(#module::relations::#relation_name(), ::std::slice::from_ref(self), &mut conn).await?;
-                Ok(values.remove(0))
+            #crud_visibility fn #relation_name<'a, 'c, A>(&'a self, db: A) -> impl ::std::future::Future<Output = Result<<#descriptor_type as ::kouga_model::Relation<Self>>::Related, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
+                async move {
+                    let mut conn = db.acquire().await.map_err(::kouga_model::db::DbError::from)?;
+                    let mut values = ::kouga_model::Relation::load(#module::relations::#relation_name(), ::std::slice::from_ref(self), &mut conn).await?;
+                    Ok(values.remove(0))
+                }
             }
         });
     }
@@ -437,29 +439,29 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         impl #name {
             #(#relation_methods)*
             #crud_visibility fn query() -> ::kouga_model::Query<Self> { ::kouga_model::Query::new() }
-            #crud_visibility async fn find<'c, A>(db: A, id: ::kouga_model::Uuid) -> Result<Option<Self>, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
-                ::kouga_model::find::<Self, A>(db, id).await
+            #crud_visibility fn find<'a, 'c, A>(db: A, id: ::kouga_model::Uuid) -> impl ::std::future::Future<Output = Result<Option<Self>, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
+                ::kouga_model::find::<Self, A>(db, id)
             }
-            #crud_visibility async fn create<'c, A>(db: A, attrs: #new_name) -> Result<Self, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
-                Self::create_with_id(db, ::kouga_model::Uuid::new_v4(), attrs).await
+            #crud_visibility fn create<'a, 'c, A>(db: A, attrs: #new_name) -> impl ::std::future::Future<Output = Result<Self, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
+                Self::create_with_id(db, ::kouga_model::Uuid::new_v4(), attrs)
             }
-            #crud_visibility async fn create_with_id<'c, A>(db: A, id: ::kouga_model::Uuid, attrs: #new_name) -> Result<Self, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
+            #crud_visibility fn create_with_id<'a, 'c, A>(db: A, id: ::kouga_model::Uuid, attrs: #new_name) -> impl ::std::future::Future<Output = Result<Self, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
                 let mut fields = ::std::vec::Vec::new();
                 #(#new_push)*
-                ::kouga_model::create::<Self, A>(db, id, fields).await
+                ::kouga_model::create::<Self, A>(db, id, fields)
             }
-            #crud_visibility async fn update<'c, A>(db: A, id: ::kouga_model::Uuid, attrs: #update_name) -> Result<Option<Self>, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
+            #crud_visibility fn update<'a, 'c, A>(db: A, id: ::kouga_model::Uuid, attrs: #update_name) -> impl ::std::future::Future<Output = Result<Option<Self>, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
                 let mut fields = ::std::vec::Vec::new();
                 #(#update_push)*
-                ::kouga_model::update::<Self, A>(db, id, fields).await
+                ::kouga_model::update::<Self, A>(db, id, fields)
             }
-            #crud_visibility async fn delete<'c, A>(db: A, id: ::kouga_model::Uuid) -> Result<bool, ::kouga_model::db::DbError>
-            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send {
-                ::kouga_model::delete::<Self, A>(db, id).await
+            #crud_visibility fn delete<'a, 'c, A>(db: A, id: ::kouga_model::Uuid) -> impl ::std::future::Future<Output = Result<bool, ::kouga_model::db::DbError>> + Send + 'a
+            where A: ::kouga_model::db::Acquire<'c, Database = ::kouga_model::db::Postgres> + Send + 'a {
+                ::kouga_model::delete::<Self, A>(db, id)
             }
         }
     })
