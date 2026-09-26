@@ -1,6 +1,11 @@
 use kouga_channel::{Channel, Options};
 use std::time::Duration;
 
+// The HTTP producer uses task_changed; this binary only needs the same policy.
+#[allow(dead_code)]
+#[path = "../../../../src/realtime.rs"]
+mod realtime;
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = kouga_model::db::connect(&std::env::var("DATABASE_URL")?, 5, Duration::from_secs(5))
@@ -21,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auth_check_interval: Duration::from_millis(auth_check_interval),
             ..Options::default()
         },
-        taskboard_board::realtime::policy,
+        realtime::policy,
     )
     .await?;
     let bind = match std::env::var("BOARD_CHANNEL_BIND") {

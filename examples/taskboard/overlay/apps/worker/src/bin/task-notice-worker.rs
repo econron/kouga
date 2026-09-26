@@ -114,7 +114,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..WorkerOptions::default()
     };
     if std::env::var("KOUGA_ENV").as_deref() == Ok("test") {
-        options.lease_duration = Duration::from_millis(300);
+        // Keep the local integration test lease comfortably above a complete SMTP
+        // exchange, even when the host is busy building container images.
+        options.lease_duration = Duration::from_secs(2);
         options.poll_interval = Duration::from_millis(20);
         options.retry_base = Duration::from_millis(20);
         options.retry_max = Duration::from_millis(100);
