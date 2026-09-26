@@ -159,6 +159,17 @@ async fn sends_three_signals_and_keeps_stdout_separate() {
     .await;
     let meter = opentelemetry::global::meter("kouga-test");
     meter.u64_counter("safe_counter").build().add(1, &[]);
+    telemetry.flush(Duration::from_secs(5)).await.unwrap();
+    for signal in ["traces", "metrics", "logs"] {
+        assert!(
+            paths
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|path| path.contains(&format!("/v1/{signal}"))),
+            "{signal} was not flushed before invocation return"
+        );
+    }
     telemetry.shutdown(Duration::from_secs(5)).await.unwrap();
     stopped.store(true, Ordering::SeqCst);
     server.join().unwrap();

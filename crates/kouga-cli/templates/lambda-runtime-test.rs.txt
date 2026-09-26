@@ -1,0 +1,65 @@
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    process::{Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+#[test]
+fn function_url_event_reaches_generated_binary_over_runtime_api() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let deadline = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 + 10_000;
+        let event = r#"{"version":"2.0","routeKey":"$default","rawPath":"/health","rawQueryString":"","headers":{"host":"example.lambda-url.us-east-1.on.aws"},"requestContext":{"http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"198.51.100.4","userAgent":"test"}},"isBase64Encoded":false}"#;
+        for expected in ["/runtime/invocation/next", "/runtime/invocation/test-id/response"] {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut received = Vec::new();
+            while !received.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0u8; 4096];
+                let size = stream.read(&mut buffer).unwrap();
+                assert!(size > 0, "Runtime API connection closed early");
+                received.extend_from_slice(&buffer[..size]);
+            }
+            let separator = received.windows(4).position(|bytes| bytes == b"\r\n\r\n").unwrap() + 4;
+            let head = String::from_utf8_lossy(&received[..separator]).to_ascii_lowercase();
+            assert!(head.contains(expected), "unexpected Runtime API request: {head}");
+            if expected.ends_with("/next") {
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nLambda-Runtime-Aws-Request-Id: test-id\r\nLambda-Runtime-Deadline-Ms: {deadline}\r\nLambda-Runtime-Invoked-Function-Arn: arn:aws:lambda:us-east-1:123456789012:function:test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{event}", event.len());
+                stream.write_all(response.as_bytes()).unwrap();
+            } else {
+                let length = head.lines().find_map(|line| line.strip_prefix("content-length: ")).unwrap().trim().parse::<usize>().unwrap();
+                while received.len() - separator < length {
+                    let mut buffer = [0u8; 4096];
+                    let size = stream.read(&mut buffer).unwrap();
+                    assert!(size > 0, "Runtime API response body ended early");
+                    received.extend_from_slice(&buffer[..size]);
+                }
+                sender.send(String::from_utf8_lossy(&received[separator..separator + length]).into_owned()).unwrap();
+                stream.write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            }
+        }
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_APP_LAMBDA_BIN"))
+        .env("AWS_LAMBDA_RUNTIME_API", address.to_string())
+        .env("AWS_LAMBDA_FUNCTION_NAME", "kouga-test")
+        .env("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "128")
+        .env("AWS_LAMBDA_FUNCTION_VERSION", "$LATEST")
+        .env("KOUGA_ENV", "production")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let response = receiver.recv_timeout(Duration::from_secs(10));
+    let _ = child.kill();
+    let output = child.wait_with_output().unwrap();
+    let response = response.unwrap_or_else(|error| panic!("Lambda response missing: {error}; stderr: {}", String::from_utf8_lossy(&output.stderr)));
+    server.join().unwrap();
+    assert!(response.contains("\"statusCode\":200"), "{response}");
+    assert!(response.contains(r#"\"data\":\"ok\""#), "{response}");
+    assert!(response.contains(r#""isBase64Encoded":false"#), "{response}");
+}

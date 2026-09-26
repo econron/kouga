@@ -17,7 +17,7 @@ docker build --build-context kouga=/path/to/kouga --target http -t taskboard-htt
 docker build --build-context kouga=/path/to/kouga --target worker -t taskboard-worker .
 ```
 
-`kouga dockerfile`は、入口とworkerを追加したあとに実行してください。`http`はHTTP入口、`worker`はジョブ機能、`grpc`はgRPC入口、`admin`はmigration生成時だけ出ます。ジョブworkerと認証メールworkerが両方ある場合は、後者を`mail-worker` targetとして生成します。生成済みDockerfileや`.dockerignore`は上書きしません。
+`kouga dockerfile`は、入口とworkerを追加したあとに実行してください。`http`はHTTP入口、`worker`はジョブ機能、`grpc`はgRPC入口、`admin`はmigration生成時だけ出ます。ジョブworkerと認証メールworkerが両方ある場合は、後者を`mail-worker` targetとして生成します。`kouga add lambda`を実行した場合だけ`lambda-http` targetも出ます。生成済みDockerfileや`.dockerignore`は上書きしません。後からtargetを追加した場合は、既存Dockerfileをレビューして手動で更新してください。
 
 `kouga` named contextには、このアプリを生成したKougaソースcheckoutを指定します。生成アプリのローカルpath依存はビルドステージ内だけで`/kouga`へ置き換えます。Dockerfileと`Cargo.lock`をアプリとともに管理し、ビルド時に対応するKougaソースを渡してください。
 
@@ -62,7 +62,32 @@ SMTPのTLS検証は有効のままです。社内CAなどを信頼させる場�
 | ECSの単発task | バッチ・migrationなどを一度実行 |
 | Lambda | 専用adapterを含むイメージで、HTTPイベントや明示したタスク呼び出しを処理 |
 
-LambdaにはRuntime APIへの対応が必要です。通常のHTTPイメージを、そのまま置くだけの対応とはしません。adapterの具体的な構成は設計中です。長時間のWebSocket接続を同じように扱うことも想定していません。
+### Cloud Run service / Jobs
+
+HTTP serviceは`http` targetをレジストリへ置き、`gcloud run deploy SERVICE --image IMAGE --region REGION --max-instances N --no-allow-unauthenticated`で配置する想定です。Kougaは`0.0.0.0:$PORT`でlistenし、SIGTERMで新規受付を止めます。公開の要否・認証・secret注入・DBへのVPC接続は利用者が設定します。レスポンス後の処理継続に依存せず、ジョブは永続queueへ投入してください。DB poolはHTTPプロセスごとに最大5接続なので、`N × 5`とworker分がDB上限を超えないようにします。
+
+Cloud Run Jobsには`worker`または`mail-worker` targetを使い、`gcloud run jobs create JOB --image IMAGE --args=--once --tasks=1 --max-retries=0 --region REGION`、その後`gcloud run jobs execute JOB --region REGION --wait`で実行します。空queueなら0で終了し、処理失敗はretry状態としてDBへ記録されます。管理用migrationは`admin` targetの別Jobにします。Jobのtask timeoutをworkerのワンショット期限より長く取り、終了コードとqueueの状態を監視してください。接続情報はSecret Manager等から実行時に渡し、イメージへ含めません。[Cloud Run serviceのコンテナ契約](https://docs.cloud.google.com/run/docs/container-contract)、[Jobの作成](https://docs.cloud.google.com/run/docs/create-jobs)、[Jobの実行](https://docs.cloud.google.com/run/docs/execute/jobs)を参照してください。
+
+### ECS service / task
+
+`http`と常駐`worker`は別のtask definitionとserviceにします。HTTPは`PORT=8080`と同じcontainer portを設定し、ALBのhealth checkを`/health`に向けます。workerのserviceには公開ポートを設定しません。単発バッチでは同じworkerイメージのcommand overrideを`["--once"]`にした`RunTask`を使い、migrationには`admin`を別taskとして使います。`readonlyRootFilesystem=true`、非root実行、ログ収集、secret参照、必要なCPU/メモリ、stop timeout、外部PostgreSQL/SMTPへの経路をtask definitionで設定します。`essential`コンテナの終了コードとqueueの状態を確認してください。[ECS task definition](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definitions.html)を参照してください。
+
+### Lambda Function URL / API Gateway HTTP API v2
+
+```sh
+kouga add lambda
+kouga dockerfile
+cargo generate-lockfile
+docker build --build-context kouga=/path/to/kouga --target lambda-http -t taskboard-lambda .
+```
+
+`kouga add lambda`は`apps/lambda`に専用パッケージを追加し、既存のHTTP routerを共有します。通常の`http`・`worker`イメージには`lambda_http`を含めません。`lambda-http`イメージにはAWS Rust Runtime Interface Clientを含め、Lambda Runtime APIでFunction URL/API Gateway HTTP API v2イベントを受けます。DockerfileはDebian系の非root・読み取り専用root対応で、Lambdaでも書き込みは`/tmp`だけを前提とします。Lambda用イメージは単一CPUアーキテクチャで作り、同じリージョンのECRから指定してください。実クラウドへのpush・Function作成はこの手順では行いません。[Lambdaコンテナ要件](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)を参照してください。
+
+利用者が配備する場合は、ECRへpushしたイメージのdigest、実行role、同じリージョンを確認してから`aws lambda create-function --function-name taskboard-http --package-type Image --code ImageUri=ECR_IMAGE_URI --role ROLE_ARN --architectures x86_64`でFunctionを作り、必要なら`aws lambda create-function-url-config --function-name taskboard-http --auth-type AWS_IAM`でFunction URLを作ります。公開権限を安易に付けず、DB接続用のネットワークと秘密情報も別途設定してください。[create-function](https://docs.aws.amazon.com/cli/latest/reference/lambda/create-function.html)、[Function URL設定](https://docs.aws.amazon.com/cli/latest/reference/lambda/create-function-url-config.html)を参照してください。
+
+バイナリ本文はbase64イベントから復号してHTTP routerへ渡し、応答はバイナリとして渡します。公式runtimeはUTF-8本文をテキスト応答として符号化する場合があります。応答本文の上限は6MiBです。認証ヘッダー、CookieなどのheadersとHTTPエラーstatusはそのまま通します。ただしFunction URL/API Gatewayで設定するIAM認証と、アプリ内の認証は別です。レート制限に使うIPはイベントの`requestContext.http.sourceIp`から取得し、`x-forwarded-for`を無条件には信用しません。Lambda入口でこのsource IPを`trusted_proxies`へ登録すると、転送ヘッダーを再び信頼するため避けてください。直接Invoke権限を与えた主体はイベントを任意に作れるため、実際の接続元として信頼できるのはFunction URL/API Gateway経由に限定されます。v1 REST API、ALB、WebSocketイベント、ネイティブgRPCはこのadapterの対象外です。
+
+Lambda contextの期限より500ms前に新規処理を打ち切り、期限切れはinvocation失敗へ変換します。OTelを使う場合は`kouga add otel`を前後どちらの順序で実行してもLambdaパッケージに反映し、各invocationの戻り前に残り時間内で最大2秒のflushを試みます。強制終了時の配送は保証しません。既存の常駐polling workerをLambdaへ置く構成や、PostgreSQL queueからLambdaの自動起動は提供しません。ワンショットworkerを起動するには別途明示的なイベント入口が必要です。長時間WebSocketも非対応です。
 
 Cloud Run Jobsは処理を終えて終了する用途です。常駐workerの配置先と混同せず、ワンショットモードを使います。PostgreSQLにジョブを登録しただけでLambdaやCloud Run Jobsが起動するわけではなく、呼び出しやスケジュールは配備先で設定します。
 
