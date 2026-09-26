@@ -20,6 +20,10 @@ if [[ -n "$(git -C "$source" status --porcelain --untracked-files=no)" ]]; then
   echo "commit Kouga changes before packaging a reproducible source revision" >&2
   exit 2
 fi
+if ! grep -q '^\[workspace\]$' "$app/Cargo.toml" || grep -q '^exclude[[:space:]]*=' "$app/Cargo.toml"; then
+  echo "expected a generated workspace without a custom exclude list" >&2
+  exit 2
+fi
 
 revision="$(git -C "$source" rev-parse HEAD)"
 mkdir -p "$app/vendor/kouga"
@@ -38,6 +42,10 @@ for manifest in "$app/Cargo.toml" "$app"/apps/*/Cargo.toml "$app"/crates/*/Cargo
   sed -i.bak -E "s|path = \"[^\"]*/crates/(kouga-[^\"]+)\"|path = \"$prefix/crates/\\1\"|g" "$manifest"
   rm "$manifest.bak"
 done
+sed -i.bak '/^\[workspace\]$/a\
+exclude = ["vendor/kouga"]
+' "$app/Cargo.toml"
+rm "$app/Cargo.toml.bak"
 
 echo "Packaged Kouga $revision in $app/vendor/kouga"
 echo "Build images with: docker build --build-context kouga=./vendor/kouga --target http ."
