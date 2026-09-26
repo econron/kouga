@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T29統合済み。T30は作業中
+状態: T00〜T30統合済み。T31は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -69,8 +69,8 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
-| T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 作業中 |
-| T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
+| T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 完了 |
+| T31 | 役割別Dockerイメージ | T29、T30 | 作業中 |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 未着手 |
 | T34 | 初版の横断検証・計測 | T33 | 未着手 |
@@ -725,7 +725,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T30 — 補助CLI・機能追加generator
 
-- 状態: レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T30-cli-features`
 - worktree: `.worktrees/T30-cli-features`
@@ -746,10 +746,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T31 — 役割別Dockerイメージ
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: Codex
 - ブランチ: `task/T31-docker-images`
-- worktree: `.worktrees/T31-docker-images`（作成前）
+- worktree: `.worktrees/T31-docker-images`
 - 依存: T29、T30
 - 対応仕様: 3.2、3.3
 - 主担当領域: Dockerテンプレート・ビルド検証
