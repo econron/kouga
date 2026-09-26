@@ -3,5 +3,7 @@
 // enters the gRPC binary.
 #[path = "../../../src/board.rs"]
 mod board;
+#[path = "../../../src/realtime.rs"]
+pub mod realtime;
 
 pub use board::{Board, CountOutput, Project, Task};

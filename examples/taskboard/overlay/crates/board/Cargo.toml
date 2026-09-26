@@ -9,7 +9,9 @@ http = []
 
 [dependencies]
 app-contracts = { package = "taskboard-contracts", path = "../contracts" }
+kouga-auth = { path = "KOUGA_SOURCE/crates/kouga-auth" }
 kouga-cache = { path = "KOUGA_SOURCE/crates/kouga-cache", default-features = false }
+kouga-channel = { path = "KOUGA_SOURCE/crates/kouga-channel" }
 kouga-core = { path = "KOUGA_SOURCE/crates/kouga-core" }
 kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
 kouga-queue = { path = "KOUGA_SOURCE/crates/kouga-queue" }
