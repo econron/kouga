@@ -74,8 +74,8 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T32 | 配備先への実行対応 | T31、T27 | 統合済み |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 統合済み |
 | T34 | 初版の横断検証・計測 | T33 | 統合済み（初版未達） |
-| T35 | 認可付き業務サンプル基盤 | T34 | レビュー待ち |
-| T36 | queue再起動・旧payload互換 | T35 | 未着手 |
+| T35 | 認可付き業務サンプル基盤 | T34 | 統合済み |
+| T36 | queue再起動・旧payload互換 | T35 | レビュー待ち |
 | T37 | 添付・WebSocket業務連携 | T35 | 未着手 |
 | T38 | 共通業務処理へのgRPC入口 | T35 | 未着手 |
 | T39 | DB管理CLIの残項目 | T34 | 統合済み |
@@ -868,7 +868,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T35 — 認可付き業務サンプル基盤
 
-- 状態: レビュー待ち
+- 状態: 統合済み
 - ブランチ: `task/T35-business-sample`
 - worktree: `.worktrees/T35-business-sample`
 - 依存: T34
@@ -882,15 +882,19 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T36 — queue再起動・旧payload互換
 
-- 状態: 未着手
+- 状態: レビュー待ち
 - ブランチ: `task/T36-queue-compat`
-- worktree: `.worktrees/T36-queue-compat`（作成前）
+- worktree: `.worktrees/T36-queue-compat`
 - 依存: T35
 - 対応仕様: 4.9、4.10、第6節5〜6、12
 
 **実装すること**: T35の業務処理でTask作成と通知job投入を同一transactionへ接続し、実workerの強制終了→lease再取得・冪等更新、再試行・メール配送、旧payloadを新workerが処理する更新試験を用意する。
 
 **完了条件**: 途中終了後の重複副作用がなく、失敗の再試行と恒久失敗が区別される。旧versionのpayloadを新workerが読むか、互換性方針に従う明示的な移行を検証する。HTTP/workerの依存分離を維持する。
+
+**実装メモ**: Task作成と`taskboard.task_created` v2のenqueueを`Board::create_task`の同一transactionに入れる。v1は`task_id`のみ、v2は`task_id`と`owner_id`で、両handlerを新workerへ登録する。専用`task-mail` queueを使い、既存の認証メールworkerとの誤取得を防ぐ。workerのDB上の通知効果は安定したjob IDを主キーとして冪等化する。ただしSMTP承認後・queue ack前の停止ではメール重複があり得る。T38の共通Board crateは同じ`board.rs`を読むため、統合後に依存とgRPC側通知件数を再確認する。
+
+**検証**: Taskboard生成fixtureでRust 1.94のfmt、workspace Clippy `-D warnings`、workspace全テストを通過（実PostgreSQLとローカルSMTP）。Task/jobの同時commit・enqueue拒否時rollback、実worker kill→lease再取得・attempt 2・DB効果1回、v1 payloadの新worker処理、SMTPの一時失敗→再試行成功、所有者不一致の恒久失敗を確認。`cargo tree`でHTTP packageに`kouga-mailer`/`kouga-worker`が無く、worker packageに`kouga-http`が無いことを確認。Kouga本体workspaceのfmt/Clippyも通過。本体workspace全テストは共有ディスク空き約2GiBのため新規リンクを避け、統合後に再実行する。
 
 ### T37 — 添付・WebSocket業務連携
 
