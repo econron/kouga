@@ -33,6 +33,7 @@ cp "$fixture_dir/overlay/migrations/20990101000001_task_notices.down.sql" "$dest
 cp "$fixture_dir/overlay/src/board.rs" "$destination/src/board.rs"
 cp "$fixture_dir/overlay/src/observability.rs" "$destination/src/observability.rs"
 cp "$fixture_dir/overlay/src/attachments.rs" "$destination/src/attachments.rs"
+cp "$fixture_dir/overlay/src/storage.rs" "$destination/src/storage.rs"
 cp "$fixture_dir/overlay/src/realtime.rs" "$destination/src/realtime.rs"
 cp "$fixture_dir/overlay/src/bin/task-complete.rs" "$destination/src/bin/task-complete.rs"
 cp "$fixture_dir/overlay/src/bin/task-seed.rs" "$destination/src/bin/task-seed.rs"
@@ -42,6 +43,7 @@ cp "$fixture_dir/overlay/tests/taskboard.rs" "$destination/tests/taskboard.rs"
 cp "$fixture_dir/overlay/tests/observability.rs" "$destination/tests/observability.rs"
 cp "$fixture_dir/overlay/tests/observability_otlp.rs" "$destination/tests/observability_otlp.rs"
 cp "$fixture_dir/overlay/tests/attachment_channel.rs" "$destination/tests/attachment_channel.rs"
+cp "$fixture_dir/overlay/tests/storage_s3.rs" "$destination/tests/storage_s3.rs"
 cp "$fixture_dir/overlay/tests/task_notice.rs" "$destination/tests/task_notice.rs"
 mkdir -p "$destination/apps/worker/tests"
 cp "$fixture_dir/overlay/apps/worker/tests/task_notice.rs" "$destination/apps/worker/tests/task_notice.rs"
@@ -54,6 +56,7 @@ bash "$fixture_dir/enable-images.sh" "$destination" "$repo_dir"
 sed -i.bak '1i\
 pub mod board;\
 pub mod attachments;\
+pub mod storage;\
 pub mod realtime;\
 pub mod observability;\
 ' "$destination/src/lib.rs"

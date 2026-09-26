@@ -1,4 +1,39 @@
-# 初版再監査（T40）
+# 初版再監査（T43）
+
+T43の作業ブランチは`task/T43-release-hardening`。この節はT41/T42統合後の同じ再生成可能なTaskboardに対する追加監査であり、T40以前の節は履歴である。判定は**公開前の残件あり**。今回の直接実証とT35〜T42の引継ぎ証拠を分けて記す。実クラウドdeploy、registry push、GitHub公開はしていない。
+
+### T43で直接確認した範囲
+
+公式[SeaweedFS](https://github.com/seaweedfs/seaweedfs)のS3互換コンテナ（取得時digest `sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882`）をloopbackで起動し、専用PostgreSQL 17と接続。`kouga-storage/tests/postgres.rs::s3_streaming_and_signed_url`で11 MiB分割upload、署名URL/所有者拒否、object削除障害→清掃を実行した。最新CLIから再生成したTaskboardの`tests/storage_s3.rs`では、S3 backendでHTTP upload→別router instanceからの認証付きdownload、別owner 404、危険なファイル名拒否、S3 endpoint停止相当の削除503→`delete_pending`非公開→復旧後清掃を実行した。`BOARD_S3_ALLOW_HTTP=1`はテスト専用で、本番は明示拒否する。ローカルストレージと実S3の双方を同じ`Storage`操作で利用する。
+
+`kouga-mailer/tests/mail.rs::smtp_transfers_text_html_and_attachment`はloopback SMTP sinkでMIMEのtext/HTML/添付を実配送し、HTML escapeと添付bytesを確認した。これはTaskboard通知workerの添付付き送信ではない。通知workerはTask作成時のテキストメールのみを送るため、Taskboard全経路としての添付メールは**未達**。外部TLS relayも未試験。
+
+移動可能なアプリは[ソース配布・互換性方針](distribution-compatibility.md)の`package-source.sh`で、commit固定の追跡済みKouga sourceをアプリ内へsnapshot化し、相対path依存と`Cargo.lock`で検証する。crates.io公開やGitHub releaseはまだない。法務監査ではregistry由来404 packageの`license`/`license_file`欠落0件を確認したが、Kouga自身のMIT/Apacheライセンス本文、第三者notice/SBOM、公開後のEOL期間は未整備である。
+
+### 仕様第5節・第6節の14シナリオ
+
+「直接」はT43の同じ生成Taskboardで再試験、「引継ぎ」は過去タスクの同一fixture系に記録済み、「限定」は重要な連結/環境を未実証、「未達」は要求そのものが未実装である。過去試験はT43の**単一起動セッションで14件全て同時実行した証拠ではない**。
+
+| §6 | 判定 | 証拠と境界 |
+|---:|---|---|
+| 1 | 引継ぎ確認 | T42の生成・5 migration・seed二重実行・本番拒否、T41のadmin image。T43では再生成まで直接実施。 |
+| 2 | 引継ぎ確認 | T35/T38の所有者別Project/Task CRUD、HTTP/gRPC。T43ではS3添付のowner拒否を直接確認。 |
+| 3 | 引継ぎ確認 | T35/T38の未知属性・並行重複とDB制約。T43の危険なファイル名拒否。多process同時更新の新規試験は未実施。 |
+| 4 | 引継ぎ確認 | T35のpreload・ページング・transaction内cache無効化。 |
+| 5 | 引継ぎ確認 | T36/T38のTaskと通知job同時commit、worker→SMTP。 |
+| 6 | 引継ぎ確認 | T36の実worker kill→lease失効→別worker再取得、DB効果1回。SMTP受理後の重複は既知のat-least-once境界。 |
+| 7 | 直接確認 | T43の実S3とHTTP owner/失敗/清掃。T37のlocal backend。S3を使ったrelease image一式は未起動。 |
+| 8 | 引継ぎ確認 | T37/T41の別Channel process、HTTP変更通知と他owner拒否。 |
+| 9 | 引継ぎ確認 | T37のreset後旧token/ticket拒否、既存socketの所定間隔での切断。 |
+| 10 | 限定 | T42の2 HTTP process共有rate-limit・DB停止readiness 503・SIGTERM/metrics。全役割を同時に停止/再起動する複合障害は未実施。 |
+| 11 | 引継ぎ確認 | T42のCRUD/auth/添付schema、開発UI/本番404、Request/認証差分check。 |
+| 12 | 限定 | T41の7独立Linux image、非root/read-onlyと連携、旧v1 payload。T43のS3変更版imageの再build/全役割再実起動は未実施。 |
+| 13 | 限定 | T42のHTTP/worker/gRPC別service.name、Collector受信/停止時継続。認証付きgRPC業務RPC→workerの同時context分離は未実施。 |
+| 14 | 引継ぎ確認 | T38の共通BoardでHTTP/gRPC認証・認可・入力・DB/job。T41の別image起動。 |
+
+第5節の有限上限はHTTP本文11 MiB、添付10 MiB、gRPC 4 MiB/128 in-flight、DB pool/queue/WebSocket上限を既存試験とTaskboard設定で確認したが、全境界値の同時負荷試験は未実施。HTTP/gRPC timeout後のDB/SMTP副作用は「取り消されない可能性」を仕様・利用者文書へ明記しており、今回の同一Taskboardによる故障注入実測はない。性能の既存固定条件はT40/T42の表を参照し、T43のS3/worker/Collector同時負荷の新数値はない。Linux imageの本番起動、外部TLS、実クラウドIAM/署名/ネットワーク、ライセンスnotice完成が公開前の残件である。**初版完成や性能優位を宣言しない。**
+
+## 初版再監査（T40・履歴）
 
 対象は main `3dee5fc`（T36〜T39統合後）、Rust 1.94.0、2026-09-26。判定は**初版未達**である。T35〜T38により所有者別CRUD、通知job、添付、別process WebSocket、業務gRPCが同一の再生成可能なTaskboardに接続された。T39でDB管理CLIも追加された。ただし「コードにある」「実DBテストに成功」と「仕様第6節を一つの配布可能なアプリとして満たす」は区別する。以下が現行判定であり、後半の「T34時点」は比較用の履歴である。
 

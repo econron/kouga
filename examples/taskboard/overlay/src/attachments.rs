@@ -77,11 +77,8 @@ fn unavailable() -> Error {
 fn parse(raw: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(raw).map_err(|_| invalid_id())
 }
-fn root() -> Result<String, Error> {
-    std::env::var("BOARD_STORAGE_ROOT").map_err(|_| unavailable())
-}
 fn storage(db: Db) -> Result<Storage, Error> {
-    Storage::local(db, root()?).map_err(|e| Error(e.into()))
+    crate::storage::open(db).map_err(|_| unavailable())
 }
 fn http(error: StorageError) -> Error {
     Error(error.into())
@@ -279,11 +276,7 @@ pub fn routes(router: Router<Db>) -> Router<Db> {
 }
 
 pub async fn cleanup_once(db: Db) -> Result<u64, StorageError> {
-    Storage::local(
-        db,
-        std::env::var("BOARD_STORAGE_ROOT")
-            .map_err(|_| StorageError::Invalid("BOARD_STORAGE_ROOT missing"))?,
-    )?
-    .cleanup(Duration::from_secs(3600), 100)
-    .await
+    crate::storage::open(db)?
+        .cleanup(Duration::from_secs(3600), 100)
+        .await
 }

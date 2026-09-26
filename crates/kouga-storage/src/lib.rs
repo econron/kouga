@@ -13,6 +13,8 @@ use sqlx::Row;
 use std::{fmt, sync::Arc, time::Duration};
 use uuid::Uuid;
 
+pub use object_store::aws::AmazonS3Builder;
+
 pub const SCHEMA_SQL: &str = include_str!("../migrations/20260925000024_create_kouga_files.up.sql");
 
 #[derive(Debug)]

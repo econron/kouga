@@ -172,12 +172,16 @@ async fn s3_streaming_and_signed_url() {
     let test = TestDb::connect(&url, concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"))
         .await
         .unwrap();
+    let bucket = std::env::var("KOUGA_TEST_S3_BUCKET").unwrap_or_else(|_| "kouga-t24".into());
+    let access_key = std::env::var("KOUGA_TEST_S3_ACCESS_KEY_ID").unwrap_or_else(|_| "test".into());
+    let secret_key =
+        std::env::var("KOUGA_TEST_S3_SECRET_ACCESS_KEY").unwrap_or_else(|_| "test".into());
     let s3 = AmazonS3Builder::new()
         .with_endpoint(&endpoint)
-        .with_bucket_name("kouga-t24")
+        .with_bucket_name(&bucket)
         .with_region("us-east-1")
-        .with_access_key_id("test")
-        .with_secret_access_key("test")
+        .with_access_key_id(&access_key)
+        .with_secret_access_key(&secret_key)
         .with_allow_http(true)
         .build()
         .unwrap();
@@ -228,10 +232,10 @@ async fn s3_streaming_and_signed_url() {
     assert_eq!(response.bytes().await.unwrap().len(), 11 * 1024 * 1024);
     let unavailable = AmazonS3Builder::new()
         .with_endpoint("http://127.0.0.1:1")
-        .with_bucket_name("kouga-t24")
+        .with_bucket_name(&bucket)
         .with_region("us-east-1")
-        .with_access_key_id("test")
-        .with_secret_access_key("test")
+        .with_access_key_id(&access_key)
+        .with_secret_access_key(&secret_key)
         .with_allow_http(true)
         .build()
         .unwrap();
