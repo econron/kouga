@@ -704,10 +704,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T29 — HTTP/gRPC同居と追加generator
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（レビュー待ち）
+- 担当者: T29担当
 - ブランチ: `task/T29-grpc-coexistence`
-- worktree: `.worktrees/T29-grpc-coexistence`（作成前）
+- worktree: `.worktrees/T29-grpc-coexistence`
 - 依存: T28、T15、T16
 - 対応仕様: 4.17、4.19、利用者ガイドHTTPとgRPC
 - 主担当領域: 入口追加CLI・gRPCテンプレート
@@ -716,12 +716,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
-- [ ] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
+- [x] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
+- [x] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
 
 **今回含めないこと**: 同一実行ファイルでの統合起動、OpenAPIと.protoの相互変換。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: HTTP-firstでgRPC追加後、HTTPとgRPCを独立ビルドし、`/greet/Kouga`と`Greeting.Greet`が同じdomain関数から`Hello, Kouga!`を返す実通信を確認。gRPC-first単独時は`kouga server`がgRPC、後付けHTTP後はHTTPを既定起動し、両入口で同じ応答と既存`/health`を確認。`cargo tree`でgRPCから`kouga-http`/`kouga-openapi`、HTTPから`kouga-grpc`/Protobuf build依存が入らないことを確認。CLI統合テストでは重複追加、既存`.proto`保護、gRPC追加後のResource生成を検証し、整形後もResource生成と既存route保持を手動確認。ResourceとgRPCを併用する生成アプリの両packageも型チェック通過。Rust 1.94のworkspace fmt/clippy/test通過（SMTPテストのみsandboxのソケット制限により権限付きで再実行）。gRPCサンプルは公開Greeting操作のみ。業務固有の認証・DB・queue連携は利用者が実装し、Docker targetはT31へ。
 
 ### T30 — 補助CLI・機能追加generator
 

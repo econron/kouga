@@ -142,6 +142,9 @@ fn fields(args: Vec<String>) -> Result<Vec<Field>, io::Error> {
 
 pub fn generate(command: GenerateCommand) -> Result<(), Box<dyn Error>> {
     check_app()?;
+    if Path::new("apps/http/Cargo.toml").is_file() && !Path::new("src/lib.rs").is_file() {
+        std::env::set_current_dir("apps/http")?;
+    }
     match command {
         GenerateCommand::Resource { name, fields } => build(&name, fields, true),
         GenerateCommand::Model { name, fields } => build(&name, fields, false),
@@ -193,7 +196,11 @@ fn request_only(name: &str, args: Vec<String>) -> Result<(), Box<dyn Error>> {
     let fresh = !module.exists();
     let lib = fs::read_to_string("src/lib.rs")?;
     let manifest = fs::read_to_string("Cargo.toml")?;
-    if fresh && lib != include_str!("../templates/lib.rs.txt") {
+    if fresh
+        && lib != include_str!("../templates/lib.rs.txt")
+        && super::api::without_greeting(&lib).as_deref()
+            != Some(include_str!("../templates/lib.rs.txt"))
+    {
         return Err(invalid("lib.rs was edited; register Request manually").into());
     }
     if !fresh && fs::read_to_string(module)?.contains(&format!("pub mod {plural};")) {
@@ -465,12 +472,17 @@ fn app_crate() -> Result<String, io::Error> {
 fn app_lib(old: &str, plural: &str, first: bool, resource: bool) -> Result<String, io::Error> {
     if first {
         let standard = include_str!("../templates/lib.rs.txt");
-        if old != standard && old != format!("pub mod requests;\n{standard}") {
+        let without_greeting = super::api::without_greeting(old);
+        let original = without_greeting.as_deref().unwrap_or(old);
+        if original != standard && original != format!("pub mod requests;\n{standard}") {
             return Err(invalid("lib.rs was edited; register resource manually"));
         }
         let mut text = include_str!("../templates/lib-db.rs.txt").to_owned();
         if resource {
             text = text.replace("// kouga: resource routes\n", &format!("let router = controllers::{plural}::routes(router);\n    // kouga: resource routes\n"));
+        }
+        if let Some(snippet) = super::api::greeting_snippet(old) {
+            text = text.replacen("    router\n}", &format!("{snippet}    router\n}}"), 1);
         }
         return Ok(text);
     }
