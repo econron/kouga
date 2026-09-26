@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "pool"] }
+lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "rustls-native-certs", "pool"] }
 minijinja = { version = "=2.12.0", default-features = false, features = ["serde"] }
 serde = { workspace = true }
 tracing = "=0.1.44"

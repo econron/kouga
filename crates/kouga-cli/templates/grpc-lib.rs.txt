@@ -43,3 +43,17 @@ pub async fn greet_client(
         .map_err(kouga_grpc::normalize_client_timeout)
         .map(|response| response.into_inner().message)
 }
+/// Wait for container termination or an interactive interrupt.
+pub async fn shutdown() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = term.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
+}

@@ -308,7 +308,7 @@ fn auth_generator_creates_separate_mail_worker_without_overwriting() {
         "{}",
         String::from_utf8_lossy(&first.stderr)
     );
-    let worker = app.join("src/bin/auth-mail-worker.rs");
+    let worker = app.join("apps/worker/src/bin/auth-mail-worker.rs");
     let before = fs::read(&worker).unwrap();
     assert!(!generate().status.success());
     assert_eq!(fs::read(worker).unwrap(), before);

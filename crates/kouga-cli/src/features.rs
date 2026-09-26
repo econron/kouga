@@ -136,21 +136,20 @@ pub(super) fn middleware(input: &str) -> Result<(), Box<dyn Error>> {
 
 pub(super) fn mailer(input: &str) -> Result<(), Box<dyn Error>> {
     let snake = name(input)?;
-    let first = !Path::new("src/mailers/mod.rs").exists();
-    let (manifest, lib) = manifest_and_lib("mailers", &["kouga-mailer"])?;
+    super::worker_package::add_mailer()?;
+    let worker = super::worker_package::dir();
+    let first = !worker.join("src/mailers/mod.rs").exists();
     let mut new_files = vec![(
-        PathBuf::from(format!("src/mailers/{snake}.rs")),
+        worker.join(format!("src/mailers/{snake}.rs")),
         format!(
             "use kouga_mailer::{{MailError, MailMessage}};\n\npub fn build(to: &str, from: &str) -> Result<MailMessage, MailError> {{\n    MailMessage::new(from, to, \"{input}\", \"Hello from {input}\")\n}}\n"
         ),
     )];
-    let mut updates = vec![
-        (PathBuf::from("Cargo.toml"), manifest),
-        (PathBuf::from("src/lib.rs"), lib),
-    ];
-    let mod_path = PathBuf::from("src/mailers/mod.rs");
+    let mut updates = Vec::new();
+    let mod_path = worker.join("src/mailers/mod.rs");
     if first {
         new_files.push((mod_path, format!("pub mod {snake};\n")));
+        updates.push((worker.join("src/lib.rs"), "pub mod mailers;\n".into()));
     } else {
         updates.push((
             mod_path.clone(),
@@ -188,29 +187,14 @@ pub(super) fn job(input: &str, fields: &[String]) -> Result<(), Box<dyn Error>> 
         };
         declarations.push_str(&format!("    pub {field_name}: {ty},\n"));
     }
-    let (mut manifest, lib) = manifest_and_lib(
-        "jobs",
-        &["kouga-job", "kouga-queue", "kouga-worker", "kouga-db"],
-    )?;
-    if !manifest.contains("tokio-util =") {
-        manifest = manifest.replacen(
-            "[dependencies]\n",
-            "[dependencies]\ntokio-util = { version = \"=0.7.19\", features = [\"rt\"] }\n",
-            1,
-        );
-    }
-    if !manifest.contains("uuid =") {
-        manifest = manifest.replacen(
-            "[dependencies]\n",
-            "[dependencies]\nuuid = { version = \"=1.26.1\", features = [\"serde\"] }\n",
-            1,
-        );
-    }
-    manifest = super::otel::worker_dependencies(&manifest)?;
-    let mod_path = PathBuf::from("src/jobs/mod.rs");
+    let contracts = super::contracts::ensure()?;
+    super::worker_package::ensure()?;
+    let (manifest, lib) = manifest_and_lib("jobs", &["kouga-queue"])?;
+    let lib = lib.replacen("pub mod jobs;", "pub use app_contracts::jobs;", 1);
+    let mod_path = contracts.join("src/jobs/mod.rs");
     let first = !mod_path.exists();
     let mut new_files = vec![(
-        PathBuf::from(format!("src/jobs/{snake}.rs")),
+        contracts.join(format!("src/jobs/{snake}.rs")),
         format!(
             "#[kouga_job::job(name = \"{snake}\", version = 1, queue = \"default\")]\npub struct {input} {{\n{declarations}}}\n"
         ),
@@ -222,13 +206,18 @@ pub(super) fn job(input: &str, fields: &[String]) -> Result<(), Box<dyn Error>> 
     ];
     if first {
         new_files.push((mod_path, format!("pub mod {snake};\n")));
+        let contracts_lib = contracts.join("src/lib.rs");
+        updates.push((
+            contracts_lib.clone(),
+            format!("{}pub mod jobs;\n", fs::read_to_string(&contracts_lib)?),
+        ));
     } else {
         updates.push((
             mod_path.clone(),
             format!("{}pub mod {snake};\n", fs::read_to_string(&mod_path)?),
         ));
     }
-    let worker_path = PathBuf::from("src/bin/job-worker.rs");
+    let worker_path = super::worker_package::dir().join("src/bin/job-worker.rs");
     let package = fs::read_to_string("Cargo.toml")?
         .lines()
         .find_map(|line| {
@@ -237,7 +226,7 @@ pub(super) fn job(input: &str, fields: &[String]) -> Result<(), Box<dyn Error>> 
         })
         .ok_or_else(|| invalid("missing package name"))?
         .to_owned();
-    let app = package.replace('-', "_");
+    let app = "app_contracts";
     if worker_path.exists() {
         let old = fs::read_to_string(&worker_path)?;
         if !old.contains("    // kouga: job registrations") {
@@ -258,6 +247,12 @@ pub(super) fn job(input: &str, fields: &[String]) -> Result<(), Box<dyn Error>> 
         let worker = format!(
             "use std::{{sync::Arc, time::Duration}};\nuse kouga_worker::{{Worker, WorkerOptions}};\n\n#[tokio::main(flavor = \"multi_thread\")]\nasync fn main() -> Result<(), Box<dyn std::error::Error>> {{\n    let db = kouga_db::connect(&std::env::var(\"DATABASE_URL\")?, 5, Duration::from_secs(5)).await?;\n    let mut worker = Worker::new(db.clone(), Arc::new(db), WorkerOptions::default())?;\n    worker.register::<{app}::jobs::{snake}::{input}>(|_job, ctx: kouga_worker::JobContext<kouga_db::Db>| async move {{ println!(\"processed job {{}}\", ctx.job_id); Ok(()) }})?;\n    // kouga: job registrations\n    let stop = tokio_util::sync::CancellationToken::new();\n    if std::env::args().any(|arg| arg == \"--once\") {{\n        worker.run_once(1, Duration::from_secs(30), stop).await?;\n    }} else {{ worker.run_forever(stop).await?; }}\n    Ok(())\n}}\n"
         );
+        let worker = worker.replacen(
+            "    let stop = tokio_util::sync::CancellationToken::new();\n",
+            "    let stop = tokio_util::sync::CancellationToken::new();\n    let signal = stop.clone();\n    tokio::spawn(async move { shutdown().await; signal.cancel(); });\n",
+            1,
+        );
+        let worker = format!("{worker}\n{}", include_str!("../templates/shutdown.rs.txt"));
         let worker = if otel_enabled {
             super::otel::worker_code(&worker, &package)?
         } else {
@@ -309,7 +304,7 @@ pub(super) fn job(input: &str, fields: &[String]) -> Result<(), Box<dyn Error>> 
     }
     emit(new_files, updates)?;
     println!(
-        "Build worker: cargo build --bin job-worker; run once: cargo run --bin job-worker -- --once"
+        "Build worker: cargo build -p {package}-worker --bin job-worker; run once: kouga worker --once"
     );
     Ok(())
 }

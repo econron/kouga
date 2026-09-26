@@ -2,15 +2,13 @@ use super::{invalid, resource};
 use std::{error::Error, fs, io, path::Path};
 
 pub fn generate() -> Result<(), Box<dyn Error>> {
-    if [
-        "src/auth.rs",
-        "src/auth_mail.rs",
-        "src/bin/auth-mail-worker.rs",
-        "src/models/user.rs",
-        "tests/auth.rs",
-    ]
-    .into_iter()
-    .any(|path| Path::new(path).exists())
+    if ["src/auth.rs", "src/models/user.rs", "tests/auth.rs"]
+        .into_iter()
+        .any(|path| Path::new(path).exists())
+        || super::worker_package::dir()
+            .join("src/bin/auth-mail-worker.rs")
+            .exists()
+        || super::contracts::dir().join("src/auth_mail.rs").exists()
     {
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, "auth already generated").into());
     }
@@ -19,21 +17,14 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
         vec!["email:string".into(), "password_hash:string".into()],
         false,
     )?;
+    let contracts = super::contracts::ensure()?;
     let manifest = fs::read_to_string("Cargo.toml")?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| invalid("source workspace unavailable"))?;
     let mut additions = String::new();
-    for name in [
-        "kouga-auth",
-        "kouga-cache",
-        "kouga-queue",
-        "kouga-job",
-        "kouga-runtime",
-        "kouga-worker",
-        "kouga-mailer",
-    ] {
+    for name in ["kouga-auth", "kouga-cache", "kouga-queue", "kouga-runtime"] {
         if !manifest.contains(&format!("{name} =")) {
             additions.push_str(&format!(
                 "{name} = {{ path = {:?} }}\n",
@@ -44,15 +35,11 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
     if !manifest.contains("sha2 =") {
         additions.push_str("sha2 = \"=0.10.9\"\n");
     }
-    if !manifest.contains("tokio-util =") {
-        additions.push_str("tokio-util = { version = \"=0.7.19\", features = [\"rt\"] }\n");
-    }
     let manifest = manifest.replacen(
         "[dependencies]\n",
         &format!("[dependencies]\n{additions}"),
         1,
     );
-    let manifest = super::otel::worker_dependencies(&manifest)?;
     fs::write("Cargo.toml", manifest)?;
     let lib = fs::read_to_string("src/lib.rs")?;
     if !lib.contains("// kouga: resource routes") {
@@ -61,7 +48,7 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
     let lib = lib
         .replacen(
             "pub mod models;",
-            "pub mod auth;\npub mod auth_mail;\npub mod models;",
+            "pub mod auth;\npub use app_contracts::auth_mail;\npub mod models;",
             1,
         )
         .replacen(
@@ -80,17 +67,30 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
     }
     fs::write("src/auth.rs", include_str!("../templates/auth.rs.txt"))?;
     fs::write(
-        "src/auth_mail.rs",
+        contracts.join("src/auth_mail.rs"),
         include_str!("../templates/auth-mail.rs.txt"),
     )?;
-    let worker =
-        include_str!("../templates/auth-mail-worker.rs.txt").replace("APP_CRATE", &app_crate()?);
+    let contracts_lib = contracts.join("src/lib.rs");
+    fs::write(
+        &contracts_lib,
+        format!(
+            "{}pub mod auth_mail;\n",
+            fs::read_to_string(&contracts_lib)?
+        ),
+    )?;
+    super::worker_package::add_auth_mail()?;
+    let worker_dir = super::worker_package::dir();
+    let worker = format!(
+        "{}\n{}",
+        include_str!("../templates/auth-mail-worker.rs.txt").replace("APP_CRATE", "app_contracts"),
+        include_str!("../templates/shutdown.rs.txt")
+    );
     let worker = if fs::read_to_string("Cargo.toml")?.contains("kouga-telemetry =") {
         super::otel::worker_code(&worker, &super::otel::service_name()?)?
     } else {
         worker
     };
-    fs::write("src/bin/auth-mail-worker.rs", worker)?;
+    fs::write(worker_dir.join("src/bin/auth-mail-worker.rs"), worker)?;
     fs::create_dir_all("tests")?;
     fs::write(
         "tests/auth.rs",
@@ -147,6 +147,6 @@ fn app_crate() -> Result<String, io::Error> {
             line.strip_prefix("name = \"")
                 .and_then(|s| s.strip_suffix('"'))
         })
-        .map(|s| s.replace('-', "_"))
+        .map(|name| name.replace('-', "_"))
         .ok_or_else(|| invalid("missing package name"))
 }

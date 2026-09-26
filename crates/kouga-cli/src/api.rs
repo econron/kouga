@@ -122,7 +122,17 @@ fn add_grpc() -> Result<(), Box<dyn Error>> {
     }
     let source = kouga_source()?;
     let manifest = fs::read_to_string("Cargo.toml")?;
-    if manifest.contains("[workspace]")
+    let members = manifest
+        .lines()
+        .find(|line| line.starts_with("members = ["));
+    if (manifest.contains("[workspace]")
+        && !matches!(
+            members,
+            Some("members = [\"apps/worker\"]")
+                | Some("members = [\"crates/contracts\"]")
+                | Some("members = [\"apps/worker\", \"crates/contracts\"]")
+                | Some("members = [\"crates/contracts\", \"apps/worker\"]")
+        ))
         || manifest.contains("app-domain =")
         || !manifest.contains("[dependencies]\n")
     {
@@ -138,7 +148,20 @@ fn add_grpc() -> Result<(), Box<dyn Error>> {
             "[dependencies]\napp-domain = {{ package = {domain:?}, path = \"crates/domain\" }}\n"
         ),
         1,
-    ) + "\n[workspace]\nmembers = [\"crates/domain\", \"crates/rpc\", \"apps/grpc\"]\nresolver = \"3\"\n";
+    );
+    let new_manifest = if let Some(line) = members {
+        new_manifest.replacen(
+            line,
+            &format!(
+                "{}, \"crates/domain\", \"crates/rpc\", \"apps/grpc\"]",
+                &line[..line.len() - 1]
+            ),
+            1,
+        )
+    } else {
+        new_manifest
+            + "\n[workspace]\nmembers = [\"crates/domain\", \"crates/rpc\", \"apps/grpc\"]\nresolver = \"3\"\n"
+    };
     write_domain(Path::new("."), &name)?;
     write_rpc(Path::new("."), &name)?;
     write_grpc(Path::new("."), &name, &source)?;
@@ -177,7 +200,7 @@ fn add_http() -> Result<(), Box<dyn Error>> {
             "[package]\nname = {name:?}\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.94\"\n\n[package.metadata.kouga]\napi = \"http\"\n\n[dependencies]\napp-domain = {{ path = \"../../crates/domain\" }}\nkouga-http = {{ path = {:?} }}\nkouga-openapi = {{ path = {:?} }}\naxum = \"=0.8.9\"\ntokio = {{ version = \"=1.53.1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }}\n",
             source.join("crates/kouga-http").display().to_string(),
             source.join("crates/kouga-openapi").display().to_string()
-        ).replace("app-domain = { path =", &format!("app-domain = {{ package = {domain:?}, path =")),
+        ).replace("app-domain = { path =", &format!("app-domain = {{ package = {domain:?}, path =")).replace("\"net\"]", "\"net\", \"signal\"]"),
     )?;
     let lib = with_greeting(include_str!("../templates/lib.rs.txt"))?;
     fs::write(http.join("src/lib.rs"), lib)?;
@@ -308,7 +331,7 @@ fn write_grpc(destination: &Path, name: &str, source: &Path) -> io::Result<()> {
             "[package]\nname = {:?}\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.94\"\n\n[lib]\nname = \"app_grpc\"\n\n[[bin]]\nname = \"server-grpc\"\npath = \"src/main.rs\"\n\n[[bin]]\nname = \"grpc-client\"\npath = \"src/client.rs\"\n\n[dependencies]\napp-domain = {{ package = {domain:?}, path = \"../../crates/domain\" }}\napp-rpc = {{ package = {rpc:?}, path = \"../../crates/rpc\" }}\nkouga-grpc = {{ path = {:?} }}\ntonic = {{ version = \"=0.14.6\", features = [\"transport\"] }}\ntokio = {{ version = \"=1.53.1\", features = [\"macros\", \"rt-multi-thread\", \"net\", \"time\"] }}\ntower = {{ version = \"=0.5.3\", features = [\"util\"] }}\n",
             format!("{name}-grpc"),
             source.join("crates/kouga-grpc").display().to_string()
-        ),
+        ).replace("\"time\"]", "\"time\", \"signal\"]"),
     )?;
     fs::write(
         grpc.join("src/main.rs"),

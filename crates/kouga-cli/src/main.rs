@@ -7,10 +7,13 @@ use std::process::{Command, ExitCode};
 
 mod api;
 mod auth;
+mod container;
+mod contracts;
 mod features;
 mod operations;
 mod otel;
 mod resource;
+mod worker_package;
 
 #[derive(Parser)]
 #[command(name = "kouga", version, about = "Kouga application CLI")]
@@ -37,6 +40,8 @@ enum Commands {
     },
     /// Add another API entrance without replacing existing code.
     Add { api: String },
+    /// Generate role-specific Docker build targets for the current application.
+    Dockerfile,
     /// List the application's registered HTTP routes.
     Routes,
     /// Generate or verify openapi.yml from registered routes.
@@ -168,6 +173,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             "otel" => operations::add_otel()?,
             _ => api::add(&api)?,
         },
+        Commands::Dockerfile => container::generate()?,
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
         Commands::Generate { command } => resource::generate(command)?,
@@ -236,7 +242,10 @@ fn create(name: &str, destination: &Path) -> Result<(), Box<dyn Error>> {
         root.join("crates/kouga-http").display().to_string(),
         root.join("crates/kouga-openapi").display().to_string()
     );
-    fs::write(destination.join("Cargo.toml"), manifest)?;
+    fs::write(
+        destination.join("Cargo.toml"),
+        manifest.replace("\"net\"]", "\"net\", \"signal\"]"),
+    )?;
     fs::write(
         destination.join("src/lib.rs"),
         include_str!("../templates/lib.rs.txt"),

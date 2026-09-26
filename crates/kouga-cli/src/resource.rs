@@ -494,7 +494,11 @@ fn app_lib(old: &str, plural: &str, first: bool, resource: bool) -> Result<Strin
         if !prefix.lines().all(|line| {
             matches!(
                 line,
-                "pub mod requests;" | "pub mod mailers;" | "pub mod jobs;" | "pub mod middlewares;"
+                "pub mod requests;"
+                    | "pub mod mailers;"
+                    | "pub mod jobs;"
+                    | "pub use app_contracts::jobs;"
+                    | "pub mod middlewares;"
             )
         }) {
             return Err(invalid("lib.rs was edited; register resource manually"));
