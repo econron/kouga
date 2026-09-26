@@ -27,6 +27,7 @@ User、トークン保存用のmigration、認証middleware、Request、controll
 | パスワードリセット | `POST /auth/password/reset` |
 
 標準はBearerトークンです。ログインで得たトークンを、`Authorization: Bearer <token>`へ付けます。期限切れ・失効済み・未指定は401です。
+生成版のログアウトは、そのユーザーの全セッションを失効させます。
 
 リセット申請は存在するメールアドレスにも存在しないアドレスにも同じ応答を返します。HTTP側は送信ジョブを登録するだけです。別プロセスで`cargo run --bin auth-mail-worker`を起動し、`DATABASE_URL`、`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`を渡してください。SMTP認証が必要なら`KOUGA_SMTP_USER`と`KOUGA_SMTP_PASSWORD`も両方渡します。ローカル試験のメール受信サーバーには、`KOUGA_ENV=test`、`KOUGA_SMTP_HOST=127.0.0.1`、`KOUGA_SMTP_LOCAL=1`とポート番号を使えます。1件だけ処理して終了する場合は`--once`を付けます。平文リセットトークンはメールにのみ載り、DBにはハッシュを保存します。
 
