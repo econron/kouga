@@ -8,6 +8,7 @@ pub type Db = sqlx::PgPool;
 pub type Transaction<'a> = sqlx::Transaction<'a, Postgres>;
 
 /// Connect only in binaries which need a database; never print the URL.
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "connect"))]
 pub async fn connect(
     url: &str,
     max_connections: u32,
@@ -32,6 +33,7 @@ pub enum IsolationLevel {
 }
 
 /// SQLx's default `db.begin()` is READ COMMITTED; this makes stronger levels explicit.
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "begin"))]
 pub async fn begin_with_isolation(
     db: &Db,
     isolation: IsolationLevel,
@@ -45,6 +47,7 @@ pub async fn begin_with_isolation(
 }
 
 /// Never retry a failed commit automatically: a lost connection may mean it committed.
+#[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "commit"))]
 pub async fn commit_transaction(tx: Transaction<'_>) -> Result<(), DbError> {
     tx.commit().await.map_err(classify_commit_error)
 }

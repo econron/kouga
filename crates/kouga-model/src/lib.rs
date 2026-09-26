@@ -2,11 +2,13 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     marker::PhantomData,
 };
 
 use kouga_db::{Acquire, DbError, DbErrorKind, PgConnection, Postgres, QueryBuilder, Transaction};
 use sqlx::{Encode, FromRow, Type, postgres::PgRow};
+use tracing::Instrument;
 
 pub use kouga_core as core;
 pub use kouga_db as db;
@@ -402,40 +404,66 @@ impl<M: Model, R: Relation<M>> PreloadQuery<M, R> {
         self
     }
 
-    pub async fn fetch_all<'c, A>(self, db: A) -> Result<Vec<Loaded<M, R::Related>>, DbError>
+    pub fn fetch_all<'a, 'c, A>(
+        self,
+        db: A,
+    ) -> impl Future<Output = Result<Vec<Loaded<M, R::Related>>, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
+        R: 'a,
     {
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        let parents = self.query.fetch_all_conn(&mut conn).await?;
-        let related = self.relation.load(&parents, &mut conn).await?;
-        Ok(parents
-            .into_iter()
-            .zip(related)
-            .map(|(model, related)| Loaded { model, related })
-            .collect())
+        let span = tracing::info_span!(
+            "kouga.db.query",
+            db.operation = "preload",
+            db.table = M::TABLE
+        );
+        async move {
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            let parents = self.query.fetch_all_conn(&mut conn).await?;
+            let related = self.relation.load(&parents, &mut conn).await?;
+            Ok(parents
+                .into_iter()
+                .zip(related)
+                .map(|(model, related)| Loaded { model, related })
+                .collect())
+        }
+        .instrument(span)
     }
 }
 
 impl<M: Model, R: Relation<M>> PreloadPageQuery<M, R> {
-    pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<Loaded<M, R::Related>>, DbError>
+    pub fn fetch<'a, 'c, A>(
+        self,
+        db: A,
+    ) -> impl Future<Output = Result<PageResult<Loaded<M, R::Related>>, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
+        R: 'a,
     {
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        let page = self.page.fetch_conn(&mut conn).await?;
-        let related = self.relation.load(&page.items, &mut conn).await?;
-        Ok(PageResult {
-            items: page
-                .items
-                .into_iter()
-                .zip(related)
-                .map(|(model, related)| Loaded { model, related })
-                .collect(),
-            page: page.page,
-            per_page: page.per_page,
-            has_next: page.has_next,
-        })
+        let span = tracing::info_span!(
+            "kouga.db.query",
+            db.operation = "preload_page",
+            db.table = M::TABLE
+        );
+        async move {
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            let page = self.page.fetch_conn(&mut conn).await?;
+            let related = self.relation.load(&page.items, &mut conn).await?;
+            Ok(PageResult {
+                items: page
+                    .items
+                    .into_iter()
+                    .zip(related)
+                    .map(|(model, related)| Loaded { model, related })
+                    .collect(),
+                page: page.page,
+                per_page: page.per_page,
+                has_next: page.has_next,
+            })
+        }
+        .instrument(span)
     }
 }
 
@@ -811,17 +839,29 @@ impl<M: Model> Query<M> {
         Ok(builder)
     }
 
-    pub async fn fetch_all<'c, A>(self, db: A) -> Result<Vec<M>, DbError>
+    pub fn fetch_all<'a, 'c, A>(
+        self,
+        db: A,
+    ) -> impl Future<Output = Result<Vec<M>, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
     {
-        let mut query = self.build("SELECT * FROM ", false, false)?;
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        query
-            .build_query_as()
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(Into::into)
+        let span = tracing::info_span!(
+            "kouga.db.query",
+            db.operation = "select",
+            db.table = M::TABLE
+        );
+        async move {
+            let mut query = self.build("SELECT * FROM ", false, false)?;
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            query
+                .build_query_as()
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(Into::into)
+        }
+        .instrument(span)
     }
 
     async fn fetch_all_conn(self, db: &mut PgConnection) -> Result<Vec<M>, DbError> {
@@ -833,54 +873,87 @@ impl<M: Model> Query<M> {
             .map_err(Into::into)
     }
 
-    pub async fn fetch_optional<'c, A>(mut self, db: A) -> Result<Option<M>, DbError>
+    // SQLx Acquire needs an explicit Send future for async HTTP handlers (rust-lang #100013).
+    #[allow(clippy::manual_async_fn)]
+    pub fn fetch_optional<'a, 'c, A>(
+        mut self,
+        db: A,
+    ) -> impl Future<Output = Result<Option<M>, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
     {
-        self.limit = Some(2);
-        let rows = self.fetch_all(db).await?;
-        if rows.len() > 1 {
-            Err(DbError::new(DbErrorKind::Integrity))
-        } else {
-            Ok(rows.into_iter().next())
+        async move {
+            self.limit = Some(2);
+            let rows = self.fetch_all(db).await?;
+            if rows.len() > 1 {
+                Err(DbError::new(DbErrorKind::Integrity))
+            } else {
+                Ok(rows.into_iter().next())
+            }
         }
     }
 
-    pub async fn count<'c, A>(mut self, db: A) -> Result<i64, DbError>
+    pub fn count<'a, 'c, A>(
+        mut self,
+        db: A,
+    ) -> impl Future<Output = Result<i64, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
     {
-        self.order.clear();
-        self.limit = None;
-        self.offset = None;
-        let mut query = self.build("SELECT count(*) FROM ", false, false)?;
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        query
-            .build_query_scalar()
-            .fetch_one(&mut *conn)
-            .await
-            .map_err(Into::into)
+        let span = tracing::info_span!(
+            "kouga.db.query",
+            db.operation = "count",
+            db.table = M::TABLE
+        );
+        async move {
+            self.order.clear();
+            self.limit = None;
+            self.offset = None;
+            let mut query = self.build("SELECT count(*) FROM ", false, false)?;
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            query
+                .build_query_scalar()
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(Into::into)
+        }
+        .instrument(span)
     }
 
-    pub async fn exists<'c, A>(mut self, db: A) -> Result<bool, DbError>
+    pub fn exists<'a, 'c, A>(
+        mut self,
+        db: A,
+    ) -> impl Future<Output = Result<bool, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
     {
-        self.order.clear();
-        self.limit = Some(1);
-        self.offset = None;
-        let mut query = self.build("SELECT 1 FROM ", false, false)?;
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        let found: Option<i32> = query
-            .build_query_scalar()
-            .fetch_optional(&mut *conn)
-            .await?;
-        Ok(found.is_some())
+        let span = tracing::info_span!(
+            "kouga.db.query",
+            db.operation = "exists",
+            db.table = M::TABLE
+        );
+        async move {
+            self.order.clear();
+            self.limit = Some(1);
+            self.offset = None;
+            let mut query = self.build("SELECT 1 FROM ", false, false)?;
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            let found: Option<i32> = query
+                .build_query_scalar()
+                .fetch_optional(&mut *conn)
+                .await?;
+            Ok(found.is_some())
+        }
+        .instrument(span)
     }
 }
 
 pub struct LockedQuery<M>(Query<M>);
 impl<M: Model> LockedQuery<M> {
+    #[tracing::instrument(name = "kouga.db.query", skip_all, fields(db.operation = "select_for_update", db.table = M::TABLE))]
     pub async fn fetch_all(self, tx: &mut Transaction<'_>) -> Result<Vec<M>, DbError> {
         let mut query = self.0.build("SELECT * FROM ", false, true)?;
         query
@@ -904,12 +977,21 @@ pub struct PageResult<M> {
     pub has_next: bool,
 }
 impl<M: Model> PageQuery<M> {
-    pub async fn fetch<'c, A>(self, db: A) -> Result<PageResult<M>, DbError>
+    pub fn fetch<'a, 'c, A>(
+        self,
+        db: A,
+    ) -> impl Future<Output = Result<PageResult<M>, DbError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
+        M: 'a,
     {
-        let mut conn = db.acquire().await.map_err(DbError::from)?;
-        self.fetch_conn(&mut conn).await
+        let span =
+            tracing::info_span!("kouga.db.query", db.operation = "page", db.table = M::TABLE);
+        async move {
+            let mut conn = db.acquire().await.map_err(DbError::from)?;
+            self.fetch_conn(&mut conn).await
+        }
+        .instrument(span)
     }
     async fn fetch_conn(mut self, conn: &mut PgConnection) -> Result<PageResult<M>, DbError> {
         if self.page < 1 || !(1..=100).contains(&self.per_page) {
@@ -933,25 +1015,38 @@ impl<M: Model> PageQuery<M> {
     }
 }
 
-pub async fn find<'c, M: Model, A>(db: A, id: Uuid) -> Result<Option<M>, DbError>
+pub fn find<'a, 'c, M: Model + 'a, A>(
+    db: A,
+    id: Uuid,
+) -> impl Future<Output = Result<Option<M>, DbError>> + Send + 'a
 where
-    A: Acquire<'c, Database = Postgres> + Send,
+    A: Acquire<'c, Database = Postgres> + Send + 'a,
 {
     Query::<M>::new()
         .filter(Column::<M, Uuid>::new("id").eq(id))
         .fetch_optional(db)
-        .await
 }
 
-pub async fn delete<'c, M: Model, A>(db: A, id: Uuid) -> Result<bool, DbError>
+pub fn delete<'a, 'c, M: Model + 'a, A>(
+    db: A,
+    id: Uuid,
+) -> impl Future<Output = Result<bool, DbError>> + Send + 'a
 where
-    A: Acquire<'c, Database = Postgres> + Send,
+    A: Acquire<'c, Database = Postgres> + Send + 'a,
 {
-    let mut query = QueryBuilder::<Postgres>::new("DELETE FROM ");
-    quoted(&mut query, table::<M>()?);
-    query.push(" WHERE \"id\" = ").push_bind(id);
-    let mut conn = db.acquire().await.map_err(DbError::from)?;
-    Ok(query.build().execute(&mut *conn).await?.rows_affected() == 1)
+    let span = tracing::info_span!(
+        "kouga.db.query",
+        db.operation = "delete",
+        db.table = M::TABLE
+    );
+    async move {
+        let mut query = QueryBuilder::<Postgres>::new("DELETE FROM ");
+        quoted(&mut query, table::<M>()?);
+        query.push(" WHERE \"id\" = ").push_bind(id);
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        Ok(query.build().execute(&mut *conn).await?.rows_affected() == 1)
+    }
+    .instrument(span)
 }
 
 pub struct Field<M> {
@@ -995,76 +1090,96 @@ fn check_fields<M: Model>(fields: &[Field<M>]) -> Result<(), DbError> {
     Ok(())
 }
 
-pub async fn create<'c, M: Model, A>(db: A, id: Uuid, fields: Vec<Field<M>>) -> Result<M, DbError>
-where
-    A: Acquire<'c, Database = Postgres> + Send,
-{
-    check_fields::<M>(&fields)?;
-    let mut query = QueryBuilder::<Postgres>::new("INSERT INTO ");
-    quoted(&mut query, table::<M>()?);
-    query.push(" (\"id\"");
-    for field in &fields {
-        query.push(", ");
-        quoted(&mut query, field.name);
-    }
-    query.push(") VALUES (").push_bind(id);
-    for field in fields {
-        query.push(", ");
-        match field.value {
-            Some(value) => value.push(&mut query),
-            None => {
-                query.push("NULL");
-            }
-        }
-    }
-    query.push(") RETURNING *");
-    let mut conn = db.acquire().await.map_err(DbError::from)?;
-    query
-        .build_query_as()
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(Into::into)
-}
-
-pub async fn update<'c, M: Model, A>(
+pub fn create<'a, 'c, M: Model + 'a, A>(
     db: A,
     id: Uuid,
     fields: Vec<Field<M>>,
-) -> Result<Option<M>, DbError>
+) -> impl Future<Output = Result<M, DbError>> + Send + 'a
 where
-    A: Acquire<'c, Database = Postgres> + Send,
+    A: Acquire<'c, Database = Postgres> + Send + 'a,
 {
-    if fields.is_empty() {
-        return Err(invalid());
-    }
-    check_fields::<M>(&fields)?;
-    let mut query = QueryBuilder::<Postgres>::new("UPDATE ");
-    quoted(&mut query, table::<M>()?);
-    query.push(" SET ");
-    for (i, field) in fields.into_iter().enumerate() {
-        if i > 0 {
+    let span = tracing::info_span!(
+        "kouga.db.query",
+        db.operation = "insert",
+        db.table = M::TABLE
+    );
+    async move {
+        check_fields::<M>(&fields)?;
+        let mut query = QueryBuilder::<Postgres>::new("INSERT INTO ");
+        quoted(&mut query, table::<M>()?);
+        query.push(" (\"id\"");
+        for field in &fields {
             query.push(", ");
+            quoted(&mut query, field.name);
         }
-        quoted(&mut query, field.name);
-        query.push(" = ");
-        match field.value {
-            Some(value) => value.push(&mut query),
-            None => {
-                query.push("NULL");
+        query.push(") VALUES (").push_bind(id);
+        for field in fields {
+            query.push(", ");
+            match field.value {
+                Some(value) => value.push(&mut query),
+                None => {
+                    query.push("NULL");
+                }
             }
         }
+        query.push(") RETURNING *");
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        query
+            .build_query_as()
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(Into::into)
     }
-    if M::COLUMNS.contains(&"updated_at") {
-        query.push(", \"updated_at\" = now()");
+    .instrument(span)
+}
+
+pub fn update<'a, 'c, M: Model + 'a, A>(
+    db: A,
+    id: Uuid,
+    fields: Vec<Field<M>>,
+) -> impl Future<Output = Result<Option<M>, DbError>> + Send + 'a
+where
+    A: Acquire<'c, Database = Postgres> + Send + 'a,
+{
+    let span = tracing::info_span!(
+        "kouga.db.query",
+        db.operation = "update",
+        db.table = M::TABLE
+    );
+    async move {
+        if fields.is_empty() {
+            return Err(invalid());
+        }
+        check_fields::<M>(&fields)?;
+        let mut query = QueryBuilder::<Postgres>::new("UPDATE ");
+        quoted(&mut query, table::<M>()?);
+        query.push(" SET ");
+        for (i, field) in fields.into_iter().enumerate() {
+            if i > 0 {
+                query.push(", ");
+            }
+            quoted(&mut query, field.name);
+            query.push(" = ");
+            match field.value {
+                Some(value) => value.push(&mut query),
+                None => {
+                    query.push("NULL");
+                }
+            }
+        }
+        if M::COLUMNS.contains(&"updated_at") {
+            query.push(", \"updated_at\" = now()");
+        }
+        query
+            .push(" WHERE \"id\" = ")
+            .push_bind(id)
+            .push(" RETURNING *");
+        let mut conn = db.acquire().await.map_err(DbError::from)?;
+        query
+            .build_query_as()
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(Into::into)
     }
-    query
-        .push(" WHERE \"id\" = ")
-        .push_bind(id)
-        .push(" RETURNING *");
-    let mut conn = db.acquire().await.map_err(DbError::from)?;
-    query
-        .build_query_as()
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(Into::into)
+    .instrument(span)
 }

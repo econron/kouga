@@ -14,6 +14,10 @@ kouga-validation = { path = "../kouga-validation" }
 tokio = { version = "=1.53.1", features = ["sync", "time"] }
 tonic = { version = "=0.14.6", features = ["transport"] }
 tracing = "=0.1.44"
+kouga-telemetry = { path = "../kouga-telemetry", optional = true }
+
+[features]
+otel = ["dep:kouga-telemetry"]
 
 [dev-dependencies]
 kouga-model = { path = "../kouga-model" }

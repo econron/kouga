@@ -3,7 +3,8 @@
 use chrono::{DateTime, Utc};
 use kouga_db::{Acquire, Postgres};
 use kouga_job::Job;
-use std::{error::Error as StdError, fmt};
+use std::{error::Error as StdError, fmt, future::Future};
+use tracing::Instrument;
 use uuid::Uuid;
 
 pub const SCHEMA_SQL: &str = include_str!("../migrations/20260925000020_create_kouga_jobs.up.sql");
@@ -80,18 +81,24 @@ impl StdError for QueueError {
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait Enqueue: Job {
-    async fn enqueue<'c, A>(&self, db: A) -> Result<Uuid, QueueError>
+    fn enqueue<'a, 'c, A>(
+        &'a self,
+        db: A,
+    ) -> impl Future<Output = Result<Uuid, QueueError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
     {
-        self.enqueue_with(db, EnqueueOptions::default()).await
+        self.enqueue_with(db, EnqueueOptions::default())
     }
 
-    async fn enqueue_at<'c, A>(&self, db: A, at: DateTime<Utc>) -> Result<Uuid, QueueError>
+    fn enqueue_at<'a, 'c, A>(
+        &'a self,
+        db: A,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Uuid, QueueError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
     {
         self.enqueue_with(
             db,
@@ -100,13 +107,22 @@ pub trait Enqueue: Job {
                 ..Default::default()
             },
         )
-        .await
     }
 
-    async fn enqueue_with<'c, A>(&self, db: A, options: EnqueueOptions) -> Result<Uuid, QueueError>
+    fn enqueue_with<'a, 'c, A>(
+        &'a self,
+        db: A,
+        options: EnqueueOptions,
+    ) -> impl Future<Output = Result<Uuid, QueueError>> + Send + 'a
     where
-        A: Acquire<'c, Database = Postgres> + Send,
+        A: Acquire<'c, Database = Postgres> + Send + 'a,
     {
+        let span = tracing::info_span!(
+            "kouga.queue.enqueue",
+            job.kind = Self::NAME,
+            job.queue = Self::QUEUE
+        );
+        async move {
         if Self::NAME.is_empty() || Self::QUEUE.is_empty() || Self::VERSION == 0 {
             return Err(QueueError::InvalidContract(
                 "empty name/queue or zero version",
@@ -114,6 +130,13 @@ pub trait Enqueue: Job {
         }
         let version = i32::try_from(Self::VERSION)
             .map_err(|_| QueueError::InvalidContract("version exceeds PostgreSQL integer"))?;
+        #[cfg(feature = "otel")]
+        let mut options = options;
+        #[cfg(feature = "otel")]
+        if options.trace.traceparent.is_none() && options.trace.tracestate.is_none() {
+            (options.trace.traceparent, options.trace.tracestate) =
+                kouga_telemetry::propagation::capture();
+        }
         options.trace.validate()?;
         let payload = serde_json::to_value(self).map_err(QueueError::Serialize)?;
         let mut connection = db
@@ -136,6 +159,7 @@ pub trait Enqueue: Job {
         .await
         .map_err(kouga_db::DbError::from)
         .map_err(QueueError::Database)
+        }.instrument(span)
     }
 }
 
