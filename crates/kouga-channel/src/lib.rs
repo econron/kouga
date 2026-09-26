@@ -175,11 +175,7 @@ impl Channel {
         policy: impl Fn(CurrentUser, Action, &str) -> bool + Send + Sync + 'static,
     ) -> Result<Self, ChannelError> {
         options.validate()?;
-        let schema: String = sqlx::query_scalar("SELECT current_schema()")
-            .fetch_one(&db)
-            .await?;
-        let digest = format!("{:x}", Sha256::digest(schema.as_bytes()));
-        let notify_channel = format!("{NOTIFY_PREFIX}{}", &digest[..40]);
+        let notify_channel = notify_channel(&db).await?;
         let mut listener = PgListener::connect_with(&db).await?;
         listener.listen(&notify_channel).await?;
         let (sender, _) = broadcast::channel(options.outbound_buffer);
@@ -285,6 +281,46 @@ impl Channel {
         .await?;
         Ok(row.map(|(id, hash)| (CurrentUser { id }, hash)))
     }
+}
+
+async fn notify_channel(db: &Db) -> Result<String, ChannelError> {
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(db)
+        .await?;
+    Ok(notify_name(&schema))
+}
+
+fn notify_name(schema: &str) -> String {
+    let digest = format!("{:x}", Sha256::digest(schema.as_bytes()));
+    format!("{NOTIFY_PREFIX}{}", &digest[..40])
+}
+
+/// Publish a trusted application event in the same transaction as its state change.
+/// The caller must authorize the actor and channel before invoking this method.
+pub async fn publish_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    channel: &str,
+    data: serde_json::Value,
+) -> Result<(), ChannelError> {
+    validate_channel(channel)?;
+    let event = Event {
+        channel: channel.to_owned(),
+        data,
+    };
+    let payload = serde_json::to_string(&event).expect("JSON event");
+    if payload.len() > 7000 {
+        return Err(ChannelError::TooLarge);
+    }
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&mut **tx)
+        .await?;
+    let notify_channel = notify_name(&schema);
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(notify_channel)
+        .bind(payload)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 fn hash(token: &str) -> Vec<u8> {

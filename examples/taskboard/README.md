@@ -1,5 +1,7 @@
 # Taskboard integration fixture
 
+Attachment and live-event usage is described in [ATTACHMENTS_AND_CHANNELS.md](ATTACHMENTS_AND_CHANNELS.md).
+
 This is one regenerable Kouga application, not a second framework implementation. It extends `kouga new taskboard` and `kouga generate auth` with owner-scoped Project/Task operations. No generated absolute local dependency path is checked in.
 
 ```sh
@@ -18,4 +20,4 @@ Register via `POST /auth/register` and pass the returned token as `Authorization
 
 The domain `taskboard::board::Board` receives the authenticated actor ID on every operation. Generated low-level model CRUD is private to that module. The Board is also used by the `task-complete` one-shot runner: set `BOARD_ACTOR_ID`, `BOARD_TASK_ID`, and `DATABASE_URL`, then run `kouga runner complete`. A different owner's task is not changed. Completion cannot be reversed. The request layer rejects unknown properties and invalid values before handlers; DB foreign keys, owner-matching composite FK, and unique indexes remain the final guards under concurrency. Cache invalidation for project counts is in the same database transaction as task mutation.
 
-This fixture covers specification §6 scenarios 2–4. Queue notifications, attachment, WebSocket, and gRPC integration belong to T36–T38 and are not claimed here. The checked-in overlay is the source of truth; do not edit a generated temporary app expecting changes to persist.
+The original Board fixture covers specification §6 scenarios 2–4; [attachment and live-event integration](ATTACHMENTS_AND_CHANNELS.md) covers 7–9. Queue/worker integration (T36) and gRPC (T38) are separate changes. The checked-in overlay is the source of truth; do not edit a generated temporary app expecting changes to persist.
