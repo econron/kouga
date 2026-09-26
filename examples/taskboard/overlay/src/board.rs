@@ -247,13 +247,28 @@ impl Board {
     }
     pub async fn delete_project(&self, actor: Uuid, id: Uuid) -> Result<(), DomainError> {
         let mut tx = self.db.begin().await.map_err(db)?;
+        sqlx::query("UPDATE kouga_files SET state='delete_pending' WHERE record_type='tasks' AND state='attached' AND record_id IN (SELECT id FROM tasks WHERE project_id=$1 AND owner_id=$2)")
+            .bind(id).bind(actor).execute(&mut *tx).await.map_err(db)?;
         // Explicitly remove children; FK defaults to RESTRICT for accidental direct deletes.
-        sqlx::query("DELETE FROM tasks WHERE project_id=$1 AND owner_id=$2")
-            .bind(id)
-            .bind(actor)
-            .execute(&mut *tx)
-            .await
-            .map_err(db)?;
+        let deleted_tasks: Vec<Uuid> = sqlx::query_scalar(
+            "DELETE FROM tasks WHERE project_id=$1 AND owner_id=$2 RETURNING id",
+        )
+        .bind(id)
+        .bind(actor)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
+        for task_id in deleted_tasks {
+            crate::realtime::task_changed(&mut tx, actor, task_id, "deleted")
+                .await
+                .map_err(|_| {
+                    failure(
+                        ErrorKind::Unavailable,
+                        "channel_unavailable",
+                        "Channel unavailable",
+                    )
+                })?;
+        }
         let deleted = sqlx::query("DELETE FROM projects WHERE id=$1 AND owner_id=$2")
             .bind(id)
             .bind(actor)
@@ -300,6 +315,15 @@ impl Board {
             )
         })?;
         Self::invalidate_in(&mut tx, project_id).await?;
+        crate::realtime::task_changed(&mut tx, actor, value.id, "created")
+            .await
+            .map_err(|_| {
+                failure(
+                    ErrorKind::Unavailable,
+                    "channel_unavailable",
+                    "Channel unavailable",
+                )
+            })?;
         tx.commit().await.map_err(db)?;
         Ok(value)
     }
@@ -343,11 +367,23 @@ impl Board {
         let value: Task = sqlx::query_as("UPDATE tasks SET title=$1, completed=$2, updated_at=now() WHERE id=$3 AND owner_id=$4 AND (completed=false OR $2=true) RETURNING *")
             .bind(next_title).bind(next_completed).bind(id).bind(actor).fetch_optional(&mut *tx).await.map_err(db)?.ok_or_else(invalid)?;
         Self::invalidate_in(&mut tx, value.project_id).await?;
+        crate::realtime::task_changed(&mut tx, actor, value.id, "updated")
+            .await
+            .map_err(|_| {
+                failure(
+                    ErrorKind::Unavailable,
+                    "channel_unavailable",
+                    "Channel unavailable",
+                )
+            })?;
         tx.commit().await.map_err(db)?;
         Ok(value)
     }
     pub async fn delete_task(&self, actor: Uuid, id: Uuid) -> Result<(), DomainError> {
         let mut tx = self.db.begin().await.map_err(db)?;
+        crate::attachments::schedule_task_cleanup(&mut tx, id)
+            .await
+            .map_err(db)?;
         let project_id: Option<Uuid> = sqlx::query_scalar(
             "DELETE FROM tasks WHERE id=$1 AND owner_id=$2 RETURNING project_id",
         )
@@ -358,6 +394,15 @@ impl Board {
         .map_err(db)?;
         let project_id = project_id.ok_or_else(not_found)?;
         Self::invalidate_in(&mut tx, project_id).await?;
+        crate::realtime::task_changed(&mut tx, actor, id, "deleted")
+            .await
+            .map_err(|_| {
+                failure(
+                    ErrorKind::Unavailable,
+                    "channel_unavailable",
+                    "Channel unavailable",
+                )
+            })?;
         tx.commit().await.map_err(db)
     }
     async fn invalidate_in(

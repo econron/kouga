@@ -898,15 +898,17 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T37 — 添付・WebSocket業務連携
 
-- 状態: 未着手
+- 状態: レビュー待ち（main未統合）
 - ブランチ: `task/T37-storage-channel-app`
-- worktree: `.worktrees/T37-storage-channel-app`（作成前）
+- worktree: `.worktrees/T37-storage-channel-app`
 - 依存: T35
 - 対応仕様: 4.12、4.13、第6節7〜9
 
 **実装すること**: T35の業務アプリへ所有者限定の添付upload/download/delete、削除失敗の清掃再試行、Task変更通知と認可付き購読を接続する。
 
 **完了条件**: 別HTTP/Channel processへ通知が届き、他ユーザーの添付・購読を拒否する。password reset後の旧token/ticket/接続の扱いと確認間隔を実DB・実通信で確認し、ローカル保存と既存S3 adapterの差を明記する。
+
+**実装・検証**: 単一Taskboard overlayに所有者限定のmultipart upload、stream download、delete、清掃ワンショットbinary、Task所有者をDBで再確認する添付triggerを追加。Task変更のPostgreSQL NOTIFYは同一transactionで発行し、別binaryのChannel processが所有者channelへの購読だけ許可する。`BOARD_CHANNEL_AUTH_CHECK_MS`で失効確認間隔を100〜60000msに設定できる。ローカル保存とS3 adapterの差・設定は[利用者向け説明](../examples/taskboard/ATTACHMENTS_AND_CHANNELS.md)に記録。Rust 1.94のfmt、生成fixtureとKouga本体のworkspace clippy `-D warnings`、workspace全テストを通過。生成fixture全テストではPostgreSQL 17と独立Channel子プロセスの実TCP WebSocketを使い、他ownerの添付・購読拒否、別HTTP側のTask更新通知、password reset後の旧token/未使用ticket拒否・既存接続切断（100ms設定）、ローカルオブジェクト削除失敗→`delete_pending`→cleanup再試行を確認。T36を取り込んだ同一fixtureでも生成、fmt/clippy、実DB/SMTP/worker全テストを再実行し、task作成transaction内のjob投入と変更通知、worker強制停止・再取得・旧payload処理の両立を確認。実S3は未検証（T34の公開判定項目）。T38の`Board`分離との統合時に接続点を再確認する。
 
 ### T38 — 共通業務処理へのgRPC入口
 

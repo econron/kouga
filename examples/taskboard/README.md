@@ -1,5 +1,7 @@
 # Taskboard integration fixture
 
+Attachment and live-event usage is described in [ATTACHMENTS_AND_CHANNELS.md](ATTACHMENTS_AND_CHANNELS.md).
+
 This is one regenerable Kouga application, not a second framework implementation. It extends `kouga new taskboard` and `kouga generate auth` with owner-scoped Project/Task operations. No generated absolute local dependency path is checked in.
 
 ```sh
@@ -24,4 +26,4 @@ The worker retains a version 1 handler for persisted jobs containing only `task_
 
 The fixture tests kill a real worker after the durable effect but before acknowledgement, wait for lease expiry, and start a new worker. They also exercise SMTP retry, permanent owner mismatch, and a version 1 payload. `TASKBOARD_TEST_PAUSE_AFTER_EFFECT_MS` only takes effect in `KOUGA_ENV=test` and exists to make the crash window deterministic. Do not set it in deployment.
 
-This fixture covers specification §6 scenarios 2–6 and the queue portion of scenario 12. Attachment, WebSocket, and gRPC integration belong to T37–T38 and are not claimed here. The checked-in overlay is the source of truth; do not edit a generated temporary app expecting changes to persist.
+This fixture covers specification §6 scenarios 2–9 and the queue portion of scenario 12. [Attachment and live-event usage](ATTACHMENTS_AND_CHANNELS.md) covers scenarios 7–9. gRPC integration belongs to T38 and is not claimed here. The checked-in overlay is the source of truth; do not edit a generated temporary app expecting changes to persist.
