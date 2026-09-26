@@ -19,6 +19,8 @@ docker build --build-context kouga=/path/to/kouga --target worker -t taskboard-w
 
 `kouga dockerfile`は、入口とworkerを追加したあとに実行してください。`http`はHTTP入口、`worker`はジョブ機能、`grpc`はgRPC入口、`admin`はmigration生成時だけ出ます。ジョブworkerと認証メールworkerが両方ある場合は、後者を`mail-worker` targetとして生成します。`kouga add lambda`を実行した場合だけ`lambda-http` targetも出ます。生成済みDockerfileや`.dockerignore`は上書きしません。後からtargetを追加した場合は、既存Dockerfileをレビューして手動で更新してください。
 
+アプリ独自の実行バイナリは`--binary TARGET=PACKAGE_DIR:BINARY`を繰り返して追加できます。`PACKAGE_DIR`はアプリ内の相対ディレクトリで、`src/bin/BINARY.rs`が必要です。target名・package名・binary名は小文字ASCII・数字・`-`・`_`の識別子に限定し、既存targetとの衝突を拒否します。例えば`kouga dockerfile --binary task-mail=apps/worker:task-notice-worker`です。targetごとにCargo packageを分けると、未使用のHTTP・SMTP・gRPC依存を通常依存treeから外せます。設定変更時は既存Dockerfileと`.dockerignore`をレビューしてから手動で置き換えてください。
+
 `kouga` named contextには、このアプリを生成したKougaソースcheckoutを指定します。生成アプリのローカルpath依存はビルドステージ内だけで`/kouga`へ置き換えます。Dockerfileと`Cargo.lock`をアプリとともに管理し、ビルド時に対応するKougaソースを渡してください。
 
 | イメージ | 入れるもの |

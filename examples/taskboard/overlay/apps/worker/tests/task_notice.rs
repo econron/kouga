@@ -101,6 +101,23 @@ async fn wait_for_effect(db: &kouga_model::Db, job: Uuid) {
     panic!("worker did not apply notification effect");
 }
 
+async fn wait_for_lease_expiry(db: &kouga_model::Db, job: Uuid) {
+    for _ in 0..200 {
+        let expired: bool = sqlx::query_scalar(
+            "SELECT lease_until IS NOT NULL AND lease_until <= now() FROM kouga_jobs WHERE id=$1",
+        )
+        .bind(job)
+        .fetch_one(db)
+        .await
+        .unwrap();
+        if expired {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("killed worker lease did not expire");
+}
+
 #[tokio::test]
 async fn killed_worker_reclaims_without_duplicate_effect_and_reads_old_payload() {
     let Ok(base_url) = std::env::var("TEST_DATABASE_URL") else {
@@ -144,7 +161,7 @@ async fn killed_worker_reclaims_without_duplicate_effect_and_reads_old_payload()
     wait_for_effect(db, job).await;
     first.kill().unwrap();
     first.wait().unwrap();
-    tokio::time::sleep(Duration::from_millis(450)).await;
+    wait_for_lease_expiry(db, job).await;
     assert!(worker(&url, port, None).wait().unwrap().success());
     let (status, attempts): (String, i32) =
         sqlx::query_as("SELECT status,attempt FROM kouga_jobs WHERE id=$1")

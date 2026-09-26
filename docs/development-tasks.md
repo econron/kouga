@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T39統合済み。T40はレビュー待ち。T34/T40監査で初版未達と判定し、T41以降で残件を追跡
+状態: T00〜T40、T42統合済み。T41はレビュー待ち。T34/T40監査で初版未達と判定し、T41以降で残件を追跡
 対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -79,9 +79,9 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T37 | 添付・WebSocket業務連携 | T35 | 統合済み |
 | T38 | 共通業務処理へのgRPC入口 | T35 | 統合済み |
 | T39 | DB管理CLIの残項目 | T34 | 統合済み |
-| T40 | 初版の残件再監査 | T36、T37、T38、T39 | レビュー待ち |
-| T41 | Taskboard全役割の独立イメージ | T40 | 未着手 |
-| T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 未着手 |
+| T40 | 初版の残件再監査 | T36、T37、T38、T39 | 統合済み |
+| T41 | Taskboard全役割の独立イメージ | T40 | レビュー待ち |
+| T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 統合済み |
 | T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
@@ -959,7 +959,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T41 — Taskboard全役割の独立イメージ
 
-- 状態: 未着手
+- 状態: レビュー待ち
 - ブランチ: `task/T41-taskboard-images`
 - worktree: `.worktrees/T41-taskboard-images`
 - 依存: T40
@@ -969,9 +969,25 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 **完了条件**: 全targetをLinux/arm64で個別release buildし、非root・read-only root、PORT/終了シグナル、外部DB・SMTP・共有storageで実起動。Task作成→別通知worker→mail、別Channelへの通知、添付清掃ワンショットと旧payload互換更新をイメージ間で確認。各展開/圧縮サイズと通常依存treeを記録する。クラウドdeploy/pushは行わない。
 
+**T41実装・公開API**: `kouga dockerfile --binary TARGET=PACKAGE_DIR:BINARY`を繰り返し指定し、生成アプリ固有の実行ファイルを独立targetへ追加できる。target/package/binary名、アプリ外path、重複、対応する`src/bin/*.rs`の有無を生成前に検証し、不正入力でDockerfileを部分更新しない。Taskboard生成scriptは通知worker、Channel、添付清掃を独立targetへ登録する。Channelと清掃は専用Cargo packageで、Channelは共有realtime policyを直接利用し、通常依存treeにHTTP/SMTP/gRPC/OTel worker runtimeを含まない。手順はTaskboard READMEと利用者向け配備文書へ記載した。
+
+**T41検証**: Rust 1.94の本体workspaceでfmt、Clippy `-D warnings`、実PostgreSQL付き全テストが成功。T42統合後に再生成したTaskboard fixtureでもfmt、Clippy、実PostgreSQL付き全workspaceテストが成功した。通知workerのクラッシュ回収試験は短すぎるテスト用leaseを2秒にし、固定sleepに代えてDBの`lease_until`失効を待つよう安定化した。T42統合後fixtureの7 targetはすべてLinux/arm64 release build済み。最終再生成fixtureとの差分は通知worker本体/試験と自動生成されたauth migrationの時刻付きファイル名のみで、Dockerfileと他5 targetのコードは同一と`diff -qr`で確認し、影響する通知worker/admin imageを再ビルドした。
+
+| target | 展開image bytes | `docker save` gzip bytes |
+|---|---:|---:|
+| http | 119806716 | 37041329 |
+| grpc | 107090668 | 32437587 |
+| worker (auth mail) | 105509892 | 31828548 |
+| task-notice-worker | 105509964 | 31821869 |
+| taskboard-channel | 103604164 | 31101868 |
+| taskboard-storage-cleanup | 101637652 | 30239666 |
+| admin | 101381817 | 30186513 |
+
+圧縮値はローカル`docker save | gzip`の参考値で、registry転送量ではない。全imageがarm64、`USER 65532:65532`で、CA bundleを保持する。T42統合前の7 imageを個別非root/read-onlyで実起動し、外部PostgreSQLで5 migration、HTTP/別gRPCの認証付き業務連携、HTTP→別Channel WebSocket通知、HTTP/gRPC→別通知worker→実SMTP/TLS（CA未信頼時の失敗後に信頼して再送）、旧v1 payload、共有storageの添付削除→別清掃ワンショット、PORT・DNS・SIGTERM正常終了を確認した。auth mail workerも空queueのワンショットexit 0。T42統合後の再生成imageではadminを専用新DB・非root/read-onlyで起動して5 migration成功、通知workerも同条件で空queueの`--once` exit 0を確認した。実クラウドdeploy/pushおよびT42統合後7 imageの全役割再実起動は未実施で、S3/障害横断の再監査はT43へ引き継ぐ。
+
 ### T42 — 単一アプリの観測・OpenAPI・運用経路
 
-- 状態: レビュー待ち（T40統合済み、T41と並行実装。mainへ未統合）
+- 状態: 統合済み
 - ブランチ: `task/T42-taskboard-observability`
 - worktree: `.worktrees/T42-taskboard-observability`
 - 依存: T40（T41と並行可能）

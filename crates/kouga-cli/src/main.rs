@@ -43,7 +43,11 @@ enum Commands {
     /// Add another API entrance without replacing existing code.
     Add { api: String },
     /// Generate role-specific Docker build targets for the current application.
-    Dockerfile,
+    Dockerfile {
+        /// Add TARGET=PACKAGE_DIR:BINARY (repeat for application-specific binaries).
+        #[arg(long = "binary")]
+        binaries: Vec<String>,
+    },
     /// List the application's registered HTTP routes.
     Routes,
     /// Generate or verify openapi.yml from registered routes.
@@ -206,7 +210,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             "lambda" => lambda::add()?,
             _ => api::add(&api)?,
         },
-        Commands::Dockerfile => container::generate()?,
+        Commands::Dockerfile { binaries } => container::generate(&binaries)?,
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
         Commands::Generate { command } => resource::generate(command)?,

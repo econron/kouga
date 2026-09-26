@@ -1,0 +1,10 @@
+[package]
+name = "taskboard-storage-cleanup-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+
+[dependencies]
+kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
+kouga-storage = { path = "KOUGA_SOURCE/crates/kouga-storage" }
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }

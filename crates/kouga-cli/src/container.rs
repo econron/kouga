@@ -12,7 +12,7 @@ fn package(path: &Path) -> io::Result<String> {
         .ok_or_else(|| invalid("package name missing"))
 }
 
-pub(super) fn generate() -> Result<(), Box<dyn Error>> {
+pub(super) fn generate(binaries: &[String]) -> Result<(), Box<dyn Error>> {
     check_app()?;
     if Path::new("Dockerfile").exists() || Path::new(".dockerignore").exists() {
         return Err(io::Error::new(
@@ -109,6 +109,41 @@ pub(super) fn generate() -> Result<(), Box<dyn Error>> {
         let name = package(Path::new("apps/lambda/Cargo.toml"))?;
         target(&mut dockerfile, "lambda-http", &name, &name, "");
     }
+    for binary in binaries {
+        let (target_name, source) = binary
+            .split_once('=')
+            .ok_or_else(|| invalid("--binary must be TARGET=PACKAGE_DIR:BINARY"))?;
+        let (directory, binary_name) = source
+            .split_once(':')
+            .ok_or_else(|| invalid("--binary must be TARGET=PACKAGE_DIR:BINARY"))?;
+        if !valid_identifier(target_name)
+            || !valid_identifier(binary_name)
+            || matches!(target_name, "build" | "runtime")
+            || target_name.starts_with("build-")
+            || !directory.split('/').all(valid_identifier)
+            || dockerfile.contains(&format!("FROM runtime AS {target_name}\n"))
+        {
+            return Err(invalid(
+                "invalid or duplicate Docker target, package directory, or binary",
+            )
+            .into());
+        }
+        let root = fs::canonicalize(".")?;
+        if !fs::canonicalize(directory)?.starts_with(&root) {
+            return Err(invalid("--binary package directory must stay inside the app").into());
+        }
+        let manifest = Path::new(directory).join("Cargo.toml");
+        let name = package(&manifest)?;
+        if !valid_identifier(&name)
+            || !Path::new(directory)
+                .join("src/bin")
+                .join(format!("{binary_name}.rs"))
+                .is_file()
+        {
+            return Err(invalid("--binary must reference a package src/bin/*.rs binary").into());
+        }
+        target(&mut dockerfile, target_name, &name, binary_name, "");
+    }
     fs::write("Dockerfile", dockerfile)?;
     fs::write(
         ".dockerignore",
@@ -116,6 +151,14 @@ pub(super) fn generate() -> Result<(), Box<dyn Error>> {
     )?;
     println!("Created Dockerfile and .dockerignore");
     Ok(())
+}
+
+fn valid_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
 }
 
 fn target(out: &mut String, target: &str, package: &str, binary: &str, settings: &str) {
