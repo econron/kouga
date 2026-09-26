@@ -910,7 +910,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T38 — 共通業務処理へのgRPC入口
 
-- 状態: 作業中（T36通知job統合待ち）
+- 状態: 作業中（通知job・Docker・全体検証待ち）
 - ブランチ: `task/T38-business-grpc`
 - worktree: `.worktrees/T38-business-grpc`
 - 依存: T35
@@ -920,7 +920,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 **完了条件**: 実クライアントで同じDB結果が得られ、不正入力・他ユーザー操作・期限・失敗statusがそれぞれ正しく拒否される。HTTP/gRPCを独立ビルドし、通常HTTPにProtobuf依存を混入させない。
 
-**作業メモ**: Taskboard overlayに独立した`taskboard-board`/`taskboard-rpc`/`taskboard-grpc`を追加。HTTPとgRPCは同一`src/board.rs`を使い、共有crateではHTTP宣言を無効化する。gRPC実クライアントでHTTP作成Project→gRPC Task作成→HTTP参照、所有者拒否、不正入力、DB unique制約、期限statusを実DBで確認。`kouga-cache`のHTTP adapterを既定有効のfeatureに分離し、gRPC runtimeの依存からHTTP/OpenAPIを除外。T36の`create_task`内通知enqueueが同じBoardへ入るため、T36 main統合後にjob投入・worker処理を再検証してから完了にする。
+**作業メモ**: Taskboard overlayに独立した`taskboard-board`/`taskboard-rpc`/`taskboard-grpc`を追加。HTTPとgRPCは同一`src/board.rs`を使い、共有crateではHTTP宣言を無効化する。gRPC実クライアントでHTTP作成Project→gRPC Task作成→HTTP参照、所有者拒否、不正入力、DB unique制約、期限statusを実DBで確認。`kouga-cache`のHTTP adapterを既定有効のfeatureに分離し、gRPC runtimeの依存からHTTP/OpenAPIを除外。T36の`create_task`通知enqueueを取り込み、gRPC→V2 job 1件→別worker/SMTPの結合テストを追加した。T36統合後の実行と独立Docker buildを再検証してから完了にする。
 
 ### T39 — DB管理CLIの残項目
 

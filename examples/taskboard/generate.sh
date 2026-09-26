@@ -51,4 +51,5 @@ tracing = "=0.1.44"\
 rm "$destination/src/lib.rs.bak" "$destination/crates/contracts/src/lib.rs.bak" "$destination/Cargo.toml.bak"
 cargo +1.94.0 fmt --manifest-path "$destination/Cargo.toml" --all
 cargo +1.94.0 generate-lockfile --manifest-path "$destination/Cargo.toml" --offline
+(cd "$destination" && "$cli" dockerfile)
 echo "Generated $destination"
