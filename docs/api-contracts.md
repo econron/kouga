@@ -205,7 +205,7 @@ endpoint macroのadapterはcontrollerが返すResultをIntoResponseより先に�
 
 `Created<T>`=201/Location/data、`Json<T>`=200/data、`Page<T>`=200/data/meta、`NoContent`=204/bodyなし。Location不正など応答構築の失敗はInternalとする。ModelをそのままSerializeせず公開出力型を生成する。
 
-T10時点の登録APIは`Router::middleware(fn)`、`Router::group("/prefix")?.middleware(fn).get(...).finish()`、`Endpoint::middleware(fn)`。`Router::configure(HttpOptions { ..Default::default() })?`で本文上限（既定1 MiB）、同時実行上限（256）、timeout（30秒）、CORS許可origin、trusted proxyの正確なIPを指定する。CORSは明示したoriginのみ有効で、credential付き`*`は拒否する。`ClientIp`と`RequestId`はrequest extensionsに入り、controllerでは`Extension<T>`で受け取れる。T23で`kouga_cache::rate_limit(RateLimiter, key_selector)`を追加し、PostgreSQL共有ストアを使う。`X-Request-ID`を全応答に付与し、共通エラーには`request_id`を含める。
+T10時点の登録APIは`Router::middleware(fn)`、`Router::group("/prefix")?.middleware(fn).get(...).finish()`、`Endpoint::middleware(fn)`。`Router::configure(HttpOptions { ..Default::default() })?`で本文上限（既定1 MiB）、同時実行上限（256）、timeout（30秒）、CORS許可origin、trusted proxyの正確なIPを指定する。CORSは明示したoriginのみ有効で、credential付き`*`は拒否する。`ClientIp`と`RequestId`はrequest extensionsに入り、controllerでは`Extension<T>`で受け取れる。T23で`kouga_cache::rate_limit(RateLimiter, key_selector)`を追加し、PostgreSQL共有ストアを使う。T38以降の`kouga-cache`は`http` featureを既定有効とし、`default-features = false`では`PgCache`等の共通APIを保ちつつHTTP rate-limit middlewareの依存を外す。`X-Request-ID`を全応答に付与し、共通エラーには`request_id`を含める。
 
 timeoutはhandlerの応答生成からbody stream完了までの絶対期限。ヘッダー送信前の期限切れは504共通エラー、送信後の期限切れはbody streamをエラーで中断する（送信済みstatusは変更できない）。同時実行枠はbody完了・drop・期限切れのいずれかで解放する。信頼プロキシの`X-Forwarded-For`は複数ヘッダー行を結合した順序で右端から検証する。
 

@@ -912,15 +912,17 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T38 — 共通業務処理へのgRPC入口
 
-- 状態: 未着手
+- 状態: レビュー待ち
 - ブランチ: `task/T38-business-grpc`
-- worktree: `.worktrees/T38-business-grpc`（作成前）
+- worktree: `.worktrees/T38-business-grpc`
 - 依存: T35
 - 対応仕様: 4.19、第6節14
 
 **実装すること**: T35の同じ業務操作をHTTP/JSONとgRPC/Protobufから呼び、認証・認可・validation・DB制約・job投入・エラー変換を両入口で検証する。
 
 **完了条件**: 実クライアントで同じDB結果が得られ、不正入力・他ユーザー操作・期限・失敗statusがそれぞれ正しく拒否される。HTTP/gRPCを独立ビルドし、通常HTTPにProtobuf依存を混入させない。
+
+**実装・検証**: Taskboard overlayに独立した`taskboard-board`/`taskboard-rpc`/`taskboard-grpc`と`proto/taskboard.proto`を追加。HTTPとgRPCは同一`src/board.rs`の所有者限定Boardを使い、T36の通知jobとT37の添付清掃・変更通知を同じtransactionで維持する。gRPC実クライアントでHTTP作成Project→gRPC Task作成→HTTP参照・完了、無認証、他owner、不正入力、DB unique制約、期限statusを実PostgreSQLで確認。gRPCからV2 jobが1件だけ登録され、別workerが実SMTP sinkへ送信し冪等effectを記録する結合テストも通過。`kouga-cache`のHTTP adapterを既定有効のfeatureに分離。通常依存treeでHTTP packageにtonic/prost、gRPC packageに`kouga-http`/`kouga-openapi`が入らない。生成fixtureとKouga本体でRust 1.94のfmt、workspace clippy `-D warnings`、実DB付きworkspace全テストを通過し、HTTP/gRPCそれぞれのdebug binaryを独立ビルドした。生成Dockerfileの別`http`/`grpc` targetは確認済みだが、T38統合版のDocker release image実ビルドは容量制約で未検証。T31の基本target実証とは分け、T40で再検証する。
 
 ### T39 — DB管理CLIの残項目
 

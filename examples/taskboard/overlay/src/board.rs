@@ -1,13 +1,16 @@
 //! Taskboard domain and HTTP entry. The same Board methods can be called by a runner or worker.
+#[cfg(feature = "http")]
 use kouga_auth::CurrentUser;
 use kouga_cache::PgCache;
 use kouga_core::{Error as DomainError, ErrorKind, Patch};
+#[cfg(feature = "http")]
 use kouga_http::{
     Created, Error, Extension, Json, NoContent, Page, Path, Router, State, Validated,
     ValidatedQuery, endpoint,
 };
 use kouga_model::{Db, Model, Uuid, sqlx};
 use kouga_queue::Enqueue;
+#[cfg(feature = "http")]
 use kouga_validation::{Request, ValidationError};
 use std::time::Duration;
 
@@ -60,6 +63,7 @@ fn db(error: sqlx::Error) -> DomainError {
     }
     kouga_model::db::DbError::from(error).into_core()
 }
+#[cfg(feature = "http")]
 fn slug(value: &str) -> Result<(), ValidationError> {
     if value.is_empty()
         || value.len() > 80
@@ -71,6 +75,7 @@ fn slug(value: &str) -> Result<(), ValidationError> {
     }
     Ok(())
 }
+#[cfg(feature = "http")]
 fn non_blank(value: &str) -> Result<(), ValidationError> {
     if value.trim().is_empty() {
         Err(ValidationError::new("blank"))
@@ -78,12 +83,14 @@ fn non_blank(value: &str) -> Result<(), ValidationError> {
         Ok(())
     }
 }
+#[cfg(feature = "http")]
 fn uuid(value: &str) -> Result<(), ValidationError> {
     Uuid::parse_str(value)
         .map(|_| ())
         .map_err(|_| ValidationError::new("uuid"))
 }
 
+#[cfg(feature = "http")]
 #[derive(Request)]
 pub struct CreateProject {
     #[validate(length(min = 1, max = 80), custom = slug)]
@@ -91,11 +98,13 @@ pub struct CreateProject {
     #[validate(length(min = 1, max = 100), custom = non_blank)]
     pub name: String,
 }
+#[cfg(feature = "http")]
 #[derive(Request)]
 pub struct ProjectPatchInput {
     #[validate(length(min = 1, max = 100), custom = non_blank)]
     pub name: Patch<String>,
 }
+#[cfg(feature = "http")]
 #[derive(Request)]
 pub struct CreateTask {
     #[validate(custom = uuid)]
@@ -103,12 +112,14 @@ pub struct CreateTask {
     #[validate(length(min = 1, max = 200), custom = non_blank)]
     pub title: String,
 }
+#[cfg(feature = "http")]
 #[derive(Request)]
 pub struct TaskPatchInput {
     #[validate(length(min = 1, max = 200), custom = non_blank)]
     pub title: Patch<String>,
     pub completed: Patch<bool>,
 }
+#[cfg(feature = "http")]
 #[derive(Request)]
 pub struct ListQuery {
     #[validate(range(min = 1, max = 1000000))]
@@ -117,12 +128,14 @@ pub struct ListQuery {
     pub per_page: Option<usize>,
 }
 
+#[cfg(feature = "http")]
 #[derive(serde::Serialize)]
 pub struct ProjectOutput {
     pub id: String,
     pub slug: String,
     pub name: String,
 }
+#[cfg(feature = "http")]
 impl From<Project> for ProjectOutput {
     fn from(value: Project) -> Self {
         Self {
@@ -132,6 +145,7 @@ impl From<Project> for ProjectOutput {
         }
     }
 }
+#[cfg(feature = "http")]
 #[derive(serde::Serialize)]
 pub struct TaskOutput {
     pub id: String,
@@ -140,6 +154,7 @@ pub struct TaskOutput {
     pub completed: bool,
     pub project_name: String,
 }
+#[cfg(feature = "http")]
 fn task_output(value: Task, project_name: String) -> TaskOutput {
     TaskOutput {
         id: value.id.to_string(),
@@ -154,6 +169,7 @@ pub struct CountOutput {
     pub total: i64,
     pub completed: i64,
 }
+#[cfg(feature = "http")]
 macro_rules! output_schema {
     ($name:ident, $schema:expr) => {
         impl schemars::JsonSchema for $name {
@@ -166,14 +182,17 @@ macro_rules! output_schema {
         }
     };
 }
+#[cfg(feature = "http")]
 output_schema!(
     ProjectOutput,
     serde_json::json!({"type":"object","required":["id","slug","name"],"properties":{"id":{"type":"string","format":"uuid"},"slug":{"type":"string"},"name":{"type":"string"}}})
 );
+#[cfg(feature = "http")]
 output_schema!(
     TaskOutput,
     serde_json::json!({"type":"object","required":["id","project_id","title","completed","project_name"],"properties":{"id":{"type":"string","format":"uuid"},"project_id":{"type":"string","format":"uuid"},"title":{"type":"string"},"completed":{"type":"boolean"},"project_name":{"type":"string"}}})
 );
+#[cfg(feature = "http")]
 output_schema!(
     CountOutput,
     serde_json::json!({"type":"object","required":["total","completed"],"properties":{"total":{"type":"integer"},"completed":{"type":"integer"}}})
@@ -381,7 +400,9 @@ impl Board {
     }
     pub async fn delete_task(&self, actor: Uuid, id: Uuid) -> Result<(), DomainError> {
         let mut tx = self.db.begin().await.map_err(db)?;
-        crate::attachments::schedule_task_cleanup(&mut tx, id)
+        sqlx::query("UPDATE kouga_files SET state='delete_pending' WHERE record_type='tasks' AND record_id=$1 AND state='attached'")
+            .bind(id)
+            .execute(&mut *tx)
             .await
             .map_err(db)?;
         let project_id: Option<Uuid> = sqlx::query_scalar(
@@ -448,17 +469,21 @@ impl Board {
     }
 }
 
+#[cfg(feature = "http")]
 fn parse_id(raw: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(raw)
         .map_err(|_| Error(failure(ErrorKind::BadRequest, "invalid_id", "Invalid ID")))
 }
+#[cfg(feature = "http")]
 fn service(db: Db) -> Board {
     Board::new(db)
 }
+#[cfg(feature = "http")]
 fn http(error: DomainError) -> Error {
     Error(error)
 }
 
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.index")]
 async fn projects(
     State(db): State<Db>,
@@ -482,6 +507,7 @@ async fn projects(
         has_next: rows.has_next,
     })
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.create")]
 async fn project_create(
     State(db): State<Db>,
@@ -497,6 +523,7 @@ async fn project_create(
         value.into(),
     ))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.show")]
 async fn project_show(
     State(db): State<Db>,
@@ -511,6 +538,7 @@ async fn project_show(
             .into(),
     ))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.update")]
 async fn project_update(
     State(db): State<Db>,
@@ -529,6 +557,7 @@ async fn project_update(
             .into(),
     ))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.destroy")]
 async fn project_destroy(
     State(db): State<Db>,
@@ -541,6 +570,7 @@ async fn project_destroy(
         .map_err(http)?;
     Ok(NoContent)
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.tasks.index")]
 async fn tasks(
     State(db): State<Db>,
@@ -569,6 +599,7 @@ async fn tasks(
         has_next: rows.has_next,
     })
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.tasks.create")]
 async fn task_create(
     State(db): State<Db>,
@@ -589,6 +620,7 @@ async fn task_create(
         task_output(value, project.name),
     ))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.tasks.show")]
 async fn task_show(
     State(db): State<Db>,
@@ -603,6 +635,7 @@ async fn task_show(
         .map_err(http)?;
     Ok(Json(task_output(value, project.name)))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.tasks.update")]
 async fn task_update(
     State(db): State<Db>,
@@ -626,6 +659,7 @@ async fn task_update(
         .map_err(http)?;
     Ok(Json(task_output(value, project.name)))
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.tasks.destroy")]
 async fn task_destroy(
     State(db): State<Db>,
@@ -638,6 +672,7 @@ async fn task_destroy(
         .map_err(http)?;
     Ok(NoContent)
 }
+#[cfg(feature = "http")]
 #[endpoint(operation_id = "board.projects.count")]
 async fn project_count(
     State(db): State<Db>,
@@ -652,6 +687,7 @@ async fn project_count(
     ))
 }
 
+#[cfg(feature = "http")]
 pub fn routes(router: Router<Db>) -> Router<Db> {
     let guard = kouga_http::auth::require_bearer(|db: &Db| db);
     router

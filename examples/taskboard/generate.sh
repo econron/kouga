@@ -44,6 +44,7 @@ cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.up.sql" "$destinati
 cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.down.sql" "$destination/migrations/20990101000000_taskboard.down.sql"
 cp "$fixture_dir/overlay/migrations/20990101000002_taskboard_attachments.up.sql" "$destination/migrations/20990101000002_taskboard_attachments.up.sql"
 cp "$fixture_dir/overlay/migrations/20990101000002_taskboard_attachments.down.sql" "$destination/migrations/20990101000002_taskboard_attachments.down.sql"
+bash "$fixture_dir/enable-grpc.sh" "$destination" "$repo_dir"
 sed -i.bak '1i\
 pub mod board;\
 pub mod attachments;\
@@ -67,4 +68,5 @@ tokio-tungstenite = "=0.29.0"\
 rm "$destination/Cargo.toml.bak"
 cargo +1.94.0 fmt --manifest-path "$destination/Cargo.toml" --all
 cargo +1.94.0 generate-lockfile --manifest-path "$destination/Cargo.toml" --offline
+(cd "$destination" && "$cli" dockerfile)
 echo "Generated $destination"
