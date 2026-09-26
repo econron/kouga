@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T18・T20〜T26・T28統合済み。T19・T27・T29は作業中
+状態: T00〜T18・T20〜T29統合済み。T19は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -66,9 +66,9 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T24 | アップロード・ストレージ | T10、T18、T21 | 完了 |
 | T25 | WebSocket・複数サーバー配信 | T10、T18 | 完了 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
-| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了・レビュー待ち |
+| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
-| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 作業中 |
+| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
@@ -662,7 +662,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T27 — 処理間のtrace連携
 
-- 状態: 完了・レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T27-trace-propagation`
 - worktree: `.worktrees/T27-trace-propagation`
@@ -704,8 +704,8 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T29 — HTTP/gRPC同居と追加generator
 
-- 状態: 作業中
-- 担当者: Codex
+- 状態: 完了（main統合済み）
+- 担当者: T29担当
 - ブランチ: `task/T29-grpc-coexistence`
 - worktree: `.worktrees/T29-grpc-coexistence`
 - 依存: T28、T15、T16
@@ -716,12 +716,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
-- [ ] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
+- [x] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
+- [x] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
 
 **今回含めないこと**: 同一実行ファイルでの統合起動、OpenAPIと.protoの相互変換。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: HTTP-firstでgRPC追加後、HTTPとgRPCを独立ビルドし、`/greet/Kouga`と`Greeting.Greet`が同じdomain関数から`Hello, Kouga!`を返す実通信を確認。gRPC-first単独時は`kouga server`がgRPC、後付けHTTP後はHTTPを既定起動し、両入口で同じ応答と既存`/health`を確認。`cargo tree`でgRPCから`kouga-http`/`kouga-openapi`、HTTPから`kouga-grpc`/Protobuf build依存が入らないことを確認。CLI統合テストでは重複追加、既存`.proto`保護、gRPC追加後のResource生成を検証し、整形後もResource生成と既存route保持を手動確認。ResourceとgRPCを併用する生成アプリの両packageも型チェック通過。Rust 1.94のworkspace fmt/clippy/test通過（SMTPテストのみsandboxのソケット制限により権限付きで再実行）。gRPCサンプルは公開Greeting操作のみ。業務固有の認証・DB・queue連携は利用者が実装し、Docker targetはT31へ。
 
 ### T30 — 補助CLI・機能追加generator
 

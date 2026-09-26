@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。gRPCのunary基盤は実装済みですが、ここにある`kouga add grpc`等のCLI・生成構成は設計案であり、まだ実行できません。クライアント指定期限のstatus変換も未対応です。
+> 入口追加CLIとunaryのgRPCサンプルは利用できます。以下のDocker targetや、認証・DB・ジョブを両入口へ自動生成する構成は後続タスクの設計案です。
 
 フロントエンドにはHTTP/JSON、別のサービスにはgRPC/Protobuf。同じ業務処理を、使う側に合った入口から提供できます。
 
@@ -16,7 +16,15 @@ cd taskboard
 kouga add grpc
 ```
 
-標準はHTTPです。gRPCを追加すると、既存のHTTPルートを残したまま、`.proto`を置く場所、生成型を扱うパッケージ、gRPC handlerと起動処理、Dockerの`grpc` targetを用意する案です。
+標準はHTTPです。gRPCを追加すると、既存のHTTPルートを残したまま、`proto/greeting.proto`、`crates/domain`、`crates/rpc`、`apps/grpc`を生成します。`/greet/{name}`と`Greeting.Greet`は同じ`app_domain::greet`を呼びます。`protoc`はビルド時に必要です。Dockerの`grpc` targetは後続タスクで追加します。
+
+```sh
+cargo build -p taskboard-grpc --bin server-grpc
+kouga server --api grpc
+# 別ターミナル: kouga server --api http
+# さらに別のターミナル: curl http://127.0.0.1:3000/greet/Kouga
+# 別ターミナル: cargo run -p taskboard-grpc --bin grpc-client -- Kouga
+```
 
 ```text
 HTTP / JSON → Request検証 → controller ─┐
@@ -32,13 +40,14 @@ gRPC / Protobuf → 入力検証 → handler ────┘
 kouga new taskboard --api grpc
 ```
 
-gRPC用の入口と共通modelを用意し、HTTP controllerやOpenAPI UIは組み込みません。後からHTTPを追加する操作も対称にします。
+gRPC用の入口と共通domainを用意し、HTTP controllerやOpenAPI UIは組み込みません。後からHTTPを追加する操作も対称です。
 
 ```sh
 kouga add http
 ```
 
 HTTP/gRPCは排他的なモードではなく、必要な入口の選択です。
+HTTPから始めた場合のHTTPパッケージはルートのまま、gRPCから始めて後付けしたHTTPパッケージは`apps/http`に置かれます。どちらも`apps/grpc`とは別にビルドできます。
 
 ## 共有するものと、入口で扱うもの
 
@@ -52,9 +61,11 @@ HTTP/gRPCは排他的なモードではなく、必要な入口の選択です�
 
 HTTPはRustのRequest・出力型からOpenAPIを生成し、gRPCは`.proto`を契約にします。HTTP用YAMLと`.proto`を自動で相互変換することは前提にしません。
 
-両方の入口で認証・入力検証・認可を行います。HTTP側にmiddlewareを付けただけでgRPC側も保護されたとは扱いません。共有する業務処理はHTTPやgRPCのstatusに依存させず、入口でエラーを変換します。
+認証が必要な業務操作では両方の入口で個別に認証・入力検証・認可を行ってください。生成されるGreetingサンプルは認証不要の公開操作で、gRPC側は空の名前を拒否します。HTTP側にmiddlewareを付けただけでgRPC側も保護されたとは扱いません。共有する業務処理はHTTPやgRPCのstatusに依存させず、入口でエラーを変換します。
 
 ## 同居しても、配備は別々に
+
+Docker targetはT31で追加予定です。現時点では入口ごとのCargoパッケージを個別にビルドできます。
 
 ```sh
 docker build --target http -t taskboard-http .
@@ -63,7 +74,7 @@ docker build --target grpc -t taskboard-grpc .
 
 同じリポジトリの共通コードから作った、別の実行ファイル・別のイメージです。HTTPだけ台数を増やしたり、gRPCを内部ネットワークへ配置したりできます。
 
-開発時も、それぞれ別のプロセスとして起動する案です。
+開発時も、それぞれ別のプロセスとして起動します。
 
 ```sh
 kouga server --api http

@@ -357,6 +357,8 @@ PATCHは`.proto`のoptionalまたはoneofでpresenceを表す。nullable更新�
 
 **T28の基盤API**: `kouga-grpc`は`require_bearer(metadata, db)`、`validate_input(input, context)`、`to_status(error)`、`InFlight::try_acquire()`、`within_deadline(limit, future)`を提供する。生成serviceごとにtonicの`max_decoding_message_size`を指定し、`Server::builder().layer(tower::util::MapResponseLayer::new(kouga_grpc::normalize_message_size_status))`でtonicの受信サイズ超過`OUT_OF_RANGE`を契約どおり`RESOURCE_EXHAUSTED`へ変換する。tonicクライアントが応答前に返すローカルtimeoutだけは`normalize_client_timeout(status)`で`DEADLINE_EXCEEDED`へ正規化する（T29のクライアント入口で適用）。`tracing` spanは認証・検証入口にある。`.proto`と`build.rs`はT29でアプリに生成する。
 
+**T29の生成構成**: `kouga new <name> --api grpc`、`kouga add grpc`、`kouga add http`で入口を選び、`kouga server [--api http|grpc]`で別々の実行ファイルを起動する。両方ある場合の既定はHTTP、gRPCのみならgRPC。HTTP-firstでは既存root packageを保ち、gRPC-firstではHTTPを`apps/http`に後付けする。共通関数は`crates/domain`、`.proto`から生成する型は`crates/rpc`、gRPC handlerは`apps/grpc`に置く。生成サンプルの`/greet/{name}`と`Greeting.Greet`は同じdomain関数を呼ぶ。gRPCのgenerated client入口は`normalize_client_timeout`を適用する。サンプルのGreetingは公開操作で、認証・DB・queue連携は利用者が業務操作ごとに実装する。Docker target生成はT31で扱う。
+
 ## 12. 実装への引き継ぎと並行作業
 
 1. T01をレビュー・mainへ統合後、T02で最小workspaceと契約のcompile fixtureを作る。T01では本体や空の全crateを追加しない。

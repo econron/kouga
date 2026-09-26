@@ -81,16 +81,99 @@ fn new_rejects_bad_names_and_never_overwrites_existing_files() {
         fs::read_to_string(destination.join("Cargo.toml")).unwrap(),
         manifest
     );
+    let grpc = root.join("grpc-api");
     assert!(
-        !Command::new(cli)
+        Command::new(cli)
             .args(["new", "grpc-api", "--api", "grpc", "--path"])
-            .arg(root.join("grpc-api"))
-            .output()
+            .arg(&grpc)
+            .status()
             .unwrap()
-            .status
             .success()
     );
-    assert!(!root.join("grpc-api").exists());
+    assert!(grpc.join("apps/grpc/src/main.rs").is_file());
+    assert!(grpc.join("crates/rpc/build.rs").is_file());
+    assert!(
+        fs::read_to_string(grpc.join("apps/grpc/Cargo.toml"))
+            .unwrap()
+            .contains("package = \"grpc-api-domain\"")
+    );
+    assert!(!grpc.join("apps/http").exists());
+    assert!(
+        Command::new(cli)
+            .current_dir(&grpc)
+            .args(["add", "http"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        !Command::new(cli)
+            .current_dir(&grpc)
+            .args(["add", "http"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(grpc.join("apps/http/src/lib.rs").is_file());
+    assert!(
+        fs::read_to_string(grpc.join("apps/http/Cargo.toml"))
+            .unwrap()
+            .contains("package = \"grpc-api-domain\"")
+    );
+    let later = root.join("http-first");
+    assert!(
+        Command::new(cli)
+            .args(["new", "http-first", "--path"])
+            .arg(&later)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        Command::new(cli)
+            .current_dir(&later)
+            .args(["add", "grpc"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        Command::new(cli)
+            .current_dir(&later)
+            .args(["generate", "resource", "Task", "title:string"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        fs::read_to_string(later.join("src/lib.rs"))
+            .unwrap()
+            .contains("greeting.show")
+    );
+    let protected = root.join("protected");
+    assert!(
+        Command::new(cli)
+            .args(["new", "protected", "--path"])
+            .arg(&protected)
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::create_dir(protected.join("proto")).unwrap();
+    fs::write(protected.join("proto/greeting.proto"), "user contract").unwrap();
+    assert!(
+        !Command::new(cli)
+            .current_dir(&protected)
+            .args(["add", "grpc"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        fs::read_to_string(protected.join("proto/greeting.proto")).unwrap(),
+        "user contract"
+    );
+    assert!(!protected.join("crates/domain").exists());
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -171,5 +254,25 @@ fn resource_generator_registers_routes_and_preserves_existing_files() {
     );
     assert_eq!(fs::read_dir(app.join("migrations")).unwrap().count(), 4);
     assert!(app.join("tests/tasks.rs").exists());
+    assert!(
+        Command::new(cli)
+            .current_dir(&app)
+            .args(["add", "grpc"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        !Command::new(cli)
+            .current_dir(&app)
+            .args(["add", "grpc"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let augmented = fs::read_to_string(app.join("src/lib.rs")).unwrap();
+    assert!(augmented.contains("controllers::tasks::routes(router)"));
+    assert!(augmented.contains("greeting.show"));
+    assert_eq!(fs::read(&controller).unwrap(), before);
     fs::remove_dir_all(root).unwrap();
 }

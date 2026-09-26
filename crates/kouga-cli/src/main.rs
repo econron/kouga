@@ -5,6 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod api;
 mod resource;
 
 #[derive(Parser)]
@@ -16,7 +17,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a new HTTP API application.
+    /// Create a new HTTP or gRPC API application.
     New {
         name: String,
         /// Destination directory (defaults to ./<name>).
@@ -27,9 +28,11 @@ enum Commands {
     },
     /// Run the development HTTP server.
     Server {
-        #[arg(long, default_value = "http")]
-        api: String,
+        #[arg(long)]
+        api: Option<String>,
     },
+    /// Add another API entrance without replacing existing code.
+    Add { api: String },
     /// List the application's registered HTTP routes.
     Routes,
     /// Generate or verify openapi.yml from registered routes.
@@ -88,19 +91,28 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     match cli.command {
-        Commands::New { name, path, api } => {
-            check_http(&api)?;
-            create(&name, path.as_deref().unwrap_or_else(|| Path::new(&name)))?;
-        }
+        Commands::New { name, path, api } => match api.as_str() {
+            "http" => create(&name, path.as_deref().unwrap_or_else(|| Path::new(&name)))?,
+            "grpc" => api::create_grpc(&name, path.as_deref().unwrap_or_else(|| Path::new(&name)))?,
+            _ => return Err(invalid("--api must be http or grpc").into()),
+        },
         Commands::Server { api } => {
-            check_http(&api)?;
-            if docs_enabled() {
+            let api = api.unwrap_or_else(|| {
+                if Path::new("src/bin/server.rs").exists() || Path::new("apps/http").exists() {
+                    "http"
+                } else {
+                    "grpc"
+                }
+                .into()
+            });
+            if api == "http" && docs_enabled() {
                 openapi(OpenapiCommand::Generate {
                     output: PathBuf::from("openapi.yml"),
                 })?;
             }
-            run_app("server")?;
+            api::run_server(&api)?;
         }
+        Commands::Add { api } => api::add(&api)?,
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
         Commands::Generate { command } => resource::generate(command)?,
@@ -118,14 +130,6 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
-}
-
-fn check_http(api: &str) -> Result<(), io::Error> {
-    if api == "http" {
-        Ok(())
-    } else {
-        Err(invalid("only --api http is implemented"))
-    }
 }
 
 fn docs_enabled() -> bool {
@@ -201,9 +205,12 @@ fn create(name: &str, destination: &Path) -> Result<(), Box<dyn Error>> {
 
 fn run_app(binary: &str) -> Result<(), Box<dyn Error>> {
     check_app()?;
-    let status = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", binary])
-        .status()?;
+    let mut command = Command::new("cargo");
+    command.args(["run", "--quiet"]);
+    if Path::new("apps/http/Cargo.toml").is_file() && !Path::new("src/bin/server.rs").is_file() {
+        command.args(["-p", &api::http_package()?]);
+    }
+    let status = command.args(["--bin", binary]).status()?;
     if status.success() {
         Ok(())
     } else {
@@ -214,7 +221,9 @@ fn run_app(binary: &str) -> Result<(), Box<dyn Error>> {
 fn check_app() -> Result<(), Box<dyn Error>> {
     let manifest = fs::read_to_string("Cargo.toml")
         .map_err(|_| invalid("run this command in a generated Kouga application"))?;
-    if !manifest.contains("[package.metadata.kouga]") {
+    if !manifest.contains("[package.metadata.kouga]")
+        && !manifest.contains("[workspace.metadata.kouga]")
+    {
         return Err(invalid("not a generated Kouga application").into());
     }
     Ok(())
@@ -222,9 +231,12 @@ fn check_app() -> Result<(), Box<dyn Error>> {
 
 fn openapi(command: OpenapiCommand) -> Result<(), Box<dyn Error>> {
     check_app()?;
-    let generated = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "openapi"])
-        .output()?;
+    let mut command_runner = Command::new("cargo");
+    command_runner.args(["run", "--quiet"]);
+    if Path::new("apps/http/Cargo.toml").is_file() && !Path::new("src/bin/server.rs").is_file() {
+        command_runner.args(["-p", &api::http_package()?]);
+    }
+    let generated = command_runner.args(["--bin", "openapi"]).output()?;
     if !generated.status.success() {
         return Err(
             io::Error::other(String::from_utf8_lossy(&generated.stderr).into_owned()).into(),

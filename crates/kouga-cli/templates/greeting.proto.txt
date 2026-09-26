@@ -1,0 +1,9 @@
+syntax = "proto3";
+package kouga;
+
+service Greeting {
+  rpc Greet (GreetRequest) returns (GreetReply);
+}
+
+message GreetRequest { string name = 1; }
+message GreetReply { string message = 1; }
