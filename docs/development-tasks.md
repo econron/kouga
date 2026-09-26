@@ -74,11 +74,11 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T32 | 配備先への実行対応 | T31、T27 | 統合済み |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 統合済み |
 | T34 | 初版の横断検証・計測 | T33 | 統合済み（初版未達） |
-| T35 | 認可付き業務サンプル基盤 | T34 | 作業中 |
+| T35 | 認可付き業務サンプル基盤 | T34 | レビュー待ち |
 | T36 | queue再起動・旧payload互換 | T35 | 未着手 |
 | T37 | 添付・WebSocket業務連携 | T35 | 未着手 |
 | T38 | 共通業務処理へのgRPC入口 | T35 | 未着手 |
-| T39 | DB管理CLIの残項目 | T34 | 未着手 |
+| T39 | DB管理CLIの残項目 | T34 | 統合済み |
 | T40 | 初版の残件再監査 | T36、T37、T38、T39 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
@@ -868,7 +868,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T35 — 認可付き業務サンプル基盤
 
-- 状態: 作業中
+- 状態: レビュー待ち
 - ブランチ: `task/T35-business-sample`
 - worktree: `.worktrees/T35-business-sample`
 - 依存: T34
@@ -877,6 +877,8 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 **実装すること**: 再生成可能な単一Taskboardアプリfixtureを作り、User→Project→Taskの所有者scope、外部キー・一意制約、関連preload・ページング、集計cacheの更新時無効化を接続する。
 
 **完了条件**: 別ユーザーの一覧・詳細・更新・削除が拒否され、未知属性/不正入力ではcontrollerとDB更新が起きない。並行重複書き込みはDB制約で拒否され、HTTP以外の経路でも業務不変条件を守る。新規ディレクトリから生成・実DBテスト・文書化できる。
+
+**実装・検証**: [再生成手順とAPI](../examples/taskboard/README.md)、`generate.sh`、overlayを追加。CLIの`new`→`generate auth`から単一アプリを生成し、`Board`にowner-scoped CRUDを集約。生成modelの低水準CRUDはprivateにし、DBのowner-matching複合FK・一意制約・CHECKでHTTP外も保護。Task一覧の型付き関連preloadと安定したページング、project集計のPostgreSQL cacheとtask変更transaction内での無効化を実装。実PostgreSQL上で登録、他ユーザーの一覧/詳細/変更拒否、未知属性・不正値の書込防止、並行重複の409、FK、preload/page、cache invalidation、runnerからの所有者判定と完了状態の不可逆性を確認。生成アプリの認証/workerを含むworkspace全テスト、Rust 1.94 fmt/clippyとKouga workspace全テストを実行。T36以降のqueue通知、添付/WebSocket、gRPC接続は未実装・未検証。
 
 ### T36 — queue再起動・旧payload互換
 
@@ -916,7 +918,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T39 — DB管理CLIの残項目
 
-- 状態: レビュー待ち
+- 状態: 統合済み
 - ブランチ: `task/T39-db-cli-completion`
 - worktree: `.worktrees/T39-db-cli-completion`
 - 依存: T34
