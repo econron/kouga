@@ -18,7 +18,7 @@ Kougaはローカルcheckoutからビルドして試せる開発版です。crat
 
 ## まだないCLI機能
 
-`kouga db rollback`、`kouga db repair`、`kouga db schema`、`kouga db seed`はありません。`kouga generate storage`もありません。ドキュメント中の抜粋コードは、明記のない限り完全なアプリを自動生成する意味ではありません。
+`kouga db rollback/repair/schema/seed/reset`は利用できます。schemaには外部`pg_dump`、seedにはアプリ登録済み`task-seed`が必要です。`kouga generate storage`はありません。ドキュメント中の抜粋コードは、明記のない限り完全なアプリを自動生成する意味ではありません。
 
 ## 先に試すなら
 
