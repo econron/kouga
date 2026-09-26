@@ -96,15 +96,17 @@ pub(super) fn instrument(code: &str, service: &str, server: bool) -> Result<Stri
             .find(|line| line.contains("axum::serve(listener,") && line.ends_with(".await?;"))
             .ok_or_else(|| invalid("server.rs was edited; add graceful shutdown manually"))?
             .to_owned();
-        result = result.replacen(
-            &line,
-            &line.replacen(
-                ".await?;",
-                ".with_graceful_shutdown(async { let _ = tokio::signal::ctrl_c().await; }).await?;",
+        if !line.contains(".with_graceful_shutdown(") {
+            result = result.replacen(
+                &line,
+                &line.replacen(
+                    ".await?;",
+                    ".with_graceful_shutdown(async { let _ = tokio::signal::ctrl_c().await; }).await?;",
+                    1,
+                ),
                 1,
-            ),
-            1,
-        );
+            );
+        }
     } else {
         let anchor = "    let cancellation = tokio_util::sync::CancellationToken::new();\n";
         let stop = "    let stop = tokio_util::sync::CancellationToken::new();\n";
@@ -115,7 +117,9 @@ pub(super) fn instrument(code: &str, service: &str, server: bool) -> Result<Stri
         } else {
             return Err(invalid("worker was edited; add shutdown signal manually"));
         };
-        result = result.replacen(anchor, &format!("{anchor}    let signal = {variable}.clone();\n    tokio::spawn(async move {{ let _ = tokio::signal::ctrl_c().await; signal.cancel(); }});\n"), 1);
+        if !result.contains("let signal =") {
+            result = result.replacen(anchor, &format!("{anchor}    let signal = {variable}.clone();\n    tokio::spawn(async move {{ let _ = tokio::signal::ctrl_c().await; signal.cancel(); }});\n"), 1);
+        }
     }
     Ok(result.replacen(
         "    Ok(())\n}",
@@ -167,13 +171,32 @@ pub(super) fn add() -> Result<(), Box<dyn Error>> {
         (PathBuf::from("Cargo.toml"), manifest),
         (server_path, server),
     ];
-    for filename in ["src/bin/job-worker.rs", "src/bin/auth-mail-worker.rs"] {
-        if Path::new(filename).is_file() {
-            let old = fs::read_to_string(filename)?;
+    let worker_dir = super::worker_package::dir();
+    let worker_manifest = worker_dir.join("Cargo.toml");
+    if worker_manifest.is_file() {
+        let old = fs::read_to_string(&worker_manifest)?;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| invalid("source checkout unavailable"))?;
+        let with_telemetry = old.replacen(
+            "[dependencies]\n",
+            &format!(
+                "[dependencies]\nkouga-telemetry = {{ path = {:?} }}\n",
+                root.join("crates/kouga-telemetry").display().to_string()
+            ),
+            1,
+        );
+        updates.push((worker_manifest, worker_dependencies(&with_telemetry)?));
+    }
+    for filename in ["job-worker.rs", "auth-mail-worker.rs"] {
+        let path = worker_dir.join("src/bin").join(filename);
+        if path.is_file() {
+            let old = fs::read_to_string(&path)?;
             let updated = worker_code(&old, &name).inspect_err(|_| {
                 eprintln!("Required {filename} change: initialize telemetry at startup, cancel worker on Ctrl-C, flush before exit.");
             })?;
-            updates.push((PathBuf::from(filename), updated));
+            updates.push((path, updated));
         }
     }
     for (path, content) in &updates {

@@ -15,12 +15,12 @@ kouga generate job SendWelcomeEmail user_id:uuid
 最初のジョブを作るときに、別のworkerバイナリとqueue migrationも用意します。
 
 ```text
-src/jobs/send_welcome_email.rs       ジョブ名と引数
-src/bin/job-worker.rs               handlerの登録と実行入口
+crates/contracts/src/jobs/send_welcome_email.rs ジョブ名と引数
+apps/worker/src/bin/job-worker.rs   handlerの登録と実行入口
 migrations/*_create_kouga_jobs.up.sql queueと失敗履歴
 ```
 
-HTTPとworkerで共有するのは、ジョブの契約です。
+HTTPとworkerで共有するのは`crates/contracts` packageのジョブ契約です。worker packageはHTTP routerやOpenAPI UIに依存しません。
 
 ```rust
 #[kouga_job::job(name = "send_welcome_email", version = 1, queue = "mail")]
@@ -113,7 +113,7 @@ pub async fn send_welcome_email(
 worker.register::<SendWelcomeEmail>(send_welcome_email)?;
 ```
 
-generatorは`src/bin/job-worker.rs`へ登録例を追加します。生成直後のhandlerは完了を記録する最小例なので、投入前に業務処理と失敗時の`JobError`へ置き換えてください。HTTP側の投入は`kouga_queue::Enqueue`をimportして`enqueue`を使います。`kouga generate mailer Welcome`の本文構築例は`src/mailers/welcome.rs`に置かれます。SMTP資格情報はworker実行環境だけへ渡してください。
+generatorは`apps/worker/src/bin/job-worker.rs`へ登録例を追加します。生成直後のhandlerは完了を記録する最小例なので、投入前に業務処理と失敗時の`JobError`へ置き換えてください。HTTP側の投入は`kouga_queue::Enqueue`をimportして`enqueue`を使います。`kouga generate mailer Welcome`の本文構築例は`apps/worker/src/mailers/welcome.rs`に置かれます。SMTP資格情報はworker実行環境だけへ渡してください。
 
 ## 常駐して処理する
 

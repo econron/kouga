@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。Dockerfileの生成と各配備先の対応は実装予定です。この文書や例を作成するだけでは、ビルド・公開・デプロイは実行されません。
+> `kouga dockerfile`はローカルにDockerfileを生成するだけです。クラウドへの配備は行いません。
 
 Kougaの配布単位はDockerイメージです。HTTPとworkerを別々にビルドし、別々の台数・環境で実行できます。
 
@@ -11,11 +11,15 @@ Kougaの配布単位はDockerイメージです。HTTPとworkerを別々にビ�
 ## イメージを作る
 
 ```sh
-docker build --target http -t taskboard-http .
-docker build --target worker -t taskboard-worker .
+kouga dockerfile
+cargo generate-lockfile
+docker build --build-context kouga=/path/to/kouga --target http -t taskboard-http .
+docker build --build-context kouga=/path/to/kouga --target worker -t taskboard-worker .
 ```
 
-`http`はHTTPの入口を選んだとき、`worker`はジョブ機能を追加したときに生成するtargetです。gRPCの入口を追加すると`grpc` targetも生成します。
+`kouga dockerfile`は、入口とworkerを追加したあとに実行してください。`http`はHTTP入口、`worker`はジョブ機能、`grpc`はgRPC入口、`admin`はmigration生成時だけ出ます。ジョブworkerと認証メールworkerが両方ある場合は、後者を`mail-worker` targetとして生成します。生成済みDockerfileや`.dockerignore`は上書きしません。
+
+`kouga` named contextには、このアプリを生成したKougaソースcheckoutを指定します。生成アプリのローカルpath依存はビルドステージ内だけで`/kouga`へ置き換えます。Dockerfileと`Cargo.lock`をアプリとともに管理し、ビルド時に対応するKougaソースを渡してください。
 
 | イメージ | 入れるもの |
 |---|---|
@@ -31,11 +35,16 @@ HTTPを起動する例です。DB接続先などを記載した`production.env`�
 
 ```sh
 docker run --rm \
+  --read-only --tmpfs /tmp \
   --env-file production.env \
   -e PORT=8080 \
   -p 8080:8080 \
   taskboard-http
 ```
+
+workerは別コンテナで起動し、同じ外部PostgreSQLを`DATABASE_URL`に指定します。メールworkerには`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`などを実行時に渡します。ワンショット実行は`docker run ... taskboard-worker --once`です。管理targetは`docker run ... taskboard-admin`でmigrationを実行し、HTTP起動時には実行しません。
+
+SMTPのTLS検証は有効のままです。社内CAなどを信頼させる場合は、CAのPEMファイルを読み取り専用でマウントし、メールworkerに`SSL_CERT_FILE`でそのパスを指定します。信頼できない証明書を許容する設定はありません。
 
 イメージの入口がビルド済みバイナリを起動します。本番コンテナ内で`kouga server`やCargoを実行する必要はありません。
 

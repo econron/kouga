@@ -81,10 +81,10 @@ fn feature_generators_preserve_edits_and_inherit_otel() {
         "{}",
         String::from_utf8_lossy(&job.stderr)
     );
-    let worker = fs::read_to_string(app.join("src/bin/job-worker.rs")).unwrap();
+    let worker = fs::read_to_string(app.join("apps/worker/src/bin/job-worker.rs")).unwrap();
     assert!(worker.contains("Telemetry::init"));
     assert!(worker.contains("telemetry.shutdown"));
-    let manifest = fs::read_to_string(app.join("Cargo.toml")).unwrap();
+    let manifest = fs::read_to_string(app.join("apps/worker/Cargo.toml")).unwrap();
     assert!(
         manifest.lines().any(
             |line| line.starts_with("kouga-worker =") && line.contains("features = [\"otel\"]")
@@ -103,7 +103,7 @@ fn feature_generators_preserve_edits_and_inherit_otel() {
             .success()
     );
     assert_eq!(
-        fs::read_to_string(app.join("src/bin/job-worker.rs")).unwrap(),
+        fs::read_to_string(app.join("apps/worker/src/bin/job-worker.rs")).unwrap(),
         worker
     );
 
@@ -114,7 +114,7 @@ fn feature_generators_preserve_edits_and_inherit_otel() {
         String::from_utf8_lossy(&auth.stderr)
     );
     assert!(
-        fs::read_to_string(app.join("src/bin/auth-mail-worker.rs"))
+        fs::read_to_string(app.join("apps/worker/src/bin/auth-mail-worker.rs"))
             .unwrap()
             .contains("Telemetry::init")
     );

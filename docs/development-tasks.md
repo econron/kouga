@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T30統合済み。T31は作業中
+状態: T00〜T30統合済み。T31はレビュー待ち
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -70,7 +70,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 完了 |
-| T31 | 役割別Dockerイメージ | T29、T30 | 作業中 |
+| T31 | 役割別Dockerイメージ | T29、T30 | レビュー待ち |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 未着手 |
 | T34 | 初版の横断検証・計測 | T33 | 未着手 |
@@ -746,7 +746,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T31 — 役割別Dockerイメージ
 
-- 状態: 作業中
+- 状態: レビュー待ち
 - 担当者: Codex
 - ブランチ: `task/T31-docker-images`
 - worktree: `.worktrees/T31-docker-images`
@@ -758,12 +758,24 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 対象ごとの依存グラフと最終イメージを確認し、ソース・toolchain・未使用runtimeが入らない。
-- [ ] 非root・read-only root、CA/TLS・DNS、PORT、終了シグナル、外部DB接続を実行確認する。
+- [x] 対象ごとの依存グラフと最終イメージを確認し、ソース・toolchain・未使用runtimeが入らない。
+- [x] 非root・read-only root、CA/TLS・DNS、PORT、終了シグナル、外部DB接続を実行確認する。
 
 **今回含めないこと**: レジストリへのpush、根拠のないサイズ目標。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga dockerfile`でBuildKit named contextを用いるmulti-stage Dockerfileを生成し、HTTP/gRPC/job worker/auth mail worker/adminの最終targetを実ビルドした。生成アプリの`apps/worker`と`crates/contracts`を独立packageに分離し、`cargo tree`でHTTPにworker/SMTP/lettreがなく、workerにHTTP/OpenAPIがないことを確認。HTTP/gRPC/worker/adminを別バイナリで起動し、外部PostgreSQLの専用schemaへadminでmigration、HTTPで認証登録とqueue投入、worker `--once`でジョブ処理、mail workerでSMTP配送を確認。gRPCは実RPCで`Hello, Kouga!`を返した。HTTPは`PORT=18081`で`/health`が200、HTTP/gRPCともSIGTERM終了コード0。HTTP/workerは`--read-only --tmpfs /tmp`とUID 65532で動作し、最終イメージにソース・Cargo・rustcがないことを確認。mail-workerで`host.docker.internal`のDNS解決、CA証明書の存在を確認。SMTPは信頼済みテストCAを`SSL_CERT_FILE`で渡すと成功し、CA未指定ではTLS `unknown ca`として拒否され、ジョブは再試行待ちになる。TLS検証無効化はしていない。
+
+同一Mac/Docker Desktop環境での実測値（バイト、圧縮列は`docker save | gzip -1 | wc -c`でありレジストリ転送量そのものではない）。起動時間はコンテナ開始からHTTP `/health`応答、gRPCポート応答、または空queueワンショット/既適用migration終了までの1回測定であり、性能保証ではない。
+
+| target | 圧縮 | イメージ展開 | バイナリ | 起動/終了 |
+|---|---:|---:|---:|---:|
+| http | 36,736,700 | 112,781,356 | 15,344,472 | 0.226秒 |
+| grpc | 31,459,448 | 99,743,204 | 2,306,320 | 0.213秒 |
+| worker | 32,454,986 | 101,572,172 | 4,135,288 | 0.21秒 |
+| mail-worker | 32,790,343 | 102,293,092 | 4,856,208 | 0.18秒 |
+| admin | 32,386,461 | 101,378,251 | 3,938,656 | 0.16秒 |
+
+生成物のHTTP-first/gRPC-first回帰テスト、全feature入りHTTP-first生成アプリの`cargo check --workspace --locked --offline`とgRPC-firstからHTTP/jobを追加した生成アプリの`cargo check --workspace --offline`、Rust 1.94のworkspace `fmt --check`、`clippy --all-targets -D warnings`、`test --workspace`が通過。新規crate追加はなく、lettre既存依存の`rustls-native-certs`機能だけ有効化した（同crateのMSRV 1.71、ライセンスApache-2.0/ISC/MIT）。DockerのBuildKit named contextには対応するKouga source checkoutが必要。実クラウド配備・レジストリpush・Lambda adapter検証はT32へ引き継ぐ。
 
 ### T32 — 配備先への実行対応
 

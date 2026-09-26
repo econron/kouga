@@ -17,3 +17,17 @@ pub fn router() -> Router<kouga_model::Db> {
     // kouga: resource routes
     router
 }
+/// Wait for container termination or an interactive interrupt.
+pub async fn shutdown() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = term.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
+}

@@ -2,7 +2,7 @@
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = std::env::var("DATABASE_URL")?;
     let db = kouga_model::db::connect(&url, 5, std::time::Duration::from_secs(5)).await?;
-    let address = std::env::var("KOUGA_BIND").unwrap_or_else(|_| "127.0.0.1:3000".to_owned());
+    let address = std::env::var("KOUGA_BIND").unwrap_or_else(|_| std::env::var("PORT").map(|port| format!("0.0.0.0:{port}")).unwrap_or_else(|_| "127.0.0.1:3000".to_owned()));
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("Kouga HTTP listening on {}", listener.local_addr()?);
     let docs = matches!(std::env::var("KOUGA_ENV").as_deref(), Err(std::env::VarError::NotPresent) | Ok("development" | "test"));
@@ -11,6 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("OpenAPI    http://{address}/openapi.yml");
     }
     let app = kouga_openapi::serve(APP_CRATE::router(), db, "APP_CRATE", "0.1.0", docs)?;
-    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(APP_CRATE::shutdown()).await?;
     Ok(())
 }

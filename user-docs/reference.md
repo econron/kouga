@@ -51,9 +51,9 @@
 | HTTPの処理・出力 | `apps/http/src/controllers/` |
 | DB操作・業務ルール | `crates/domain/src/models/` |
 | DB構造 | `migrations/` |
-| ジョブ名・引数 | `src/jobs/` |
-| ジョブの実行処理・登録 | `src/bin/job-worker.rs` |
-| メール本文の組み立て | `src/mailers/` |
+| ジョブ名・引数 | `crates/contracts/src/jobs/` |
+| ジョブの実行処理・登録 | `apps/worker/src/bin/job-worker.rs` |
+| メール本文の組み立て | `apps/worker/src/mailers/` |
 
 生成直後にすべてのディレクトリが必要なわけではありません。worker用のファイルは、その機能を追加したときに作ります。
 

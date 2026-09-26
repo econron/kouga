@@ -1,5 +1,5 @@
 use super::{JobsCommand, check_app, invalid};
-use std::{error::Error, io, path::Path, process::Command, time::Duration};
+use std::{error::Error, fs, io, path::Path, process::Command, time::Duration};
 
 fn database() -> Result<(tokio::runtime::Runtime, kouga_db::Db), Box<dyn Error>> {
     let url = std::env::var("DATABASE_URL")?;
@@ -225,14 +225,23 @@ pub(super) fn worker(queue: Option<&str>, once: bool) -> Result<(), Box<dyn Erro
     if Path::new("apps/http/Cargo.toml").is_file() && !Path::new("src/bin/server.rs").is_file() {
         std::env::set_current_dir("apps/http")?;
     }
+    let worker = super::worker_package::dir();
     let binary = match queue {
-        Some("mail") if Path::new("src/bin/auth-mail-worker.rs").is_file() => "auth-mail-worker",
-        None | Some("default") if Path::new("src/bin/job-worker.rs").is_file() => "job-worker",
-        None if Path::new("src/bin/auth-mail-worker.rs").is_file() => "auth-mail-worker",
+        Some("mail") if worker.join("src/bin/auth-mail-worker.rs").is_file() => "auth-mail-worker",
+        None | Some("default") if worker.join("src/bin/job-worker.rs").is_file() => "job-worker",
+        None if worker.join("src/bin/auth-mail-worker.rs").is_file() => "auth-mail-worker",
         _ => return Err(invalid("no generated worker for the requested queue").into()),
     };
+    let package = fs::read_to_string(worker.join("Cargo.toml"))?
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("name = \"")
+                .and_then(|s| s.strip_suffix('"'))
+        })
+        .ok_or_else(|| invalid("worker package name missing"))?
+        .to_owned();
     let mut command = Command::new("cargo");
-    command.args(["run", "--quiet", "--bin", binary]);
+    command.args(["run", "--quiet", "-p", &package, "--bin", binary]);
     if once {
         command.args(["--", "--once"]);
     }

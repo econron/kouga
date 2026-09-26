@@ -75,7 +75,9 @@ T16で`kouga generate resource <PascalCase> field:type...`を追加。例は`Tas
 
 T30の補助CLIは`jobs list [--limit N]`、`show|retry|cancel <UUID>`、`enqueue <name> [--queue Q] [--version V]`、`maintenance`、`console`、`runner <task>`、`worker [--queue default|mail] [--once]`。`jobs enqueue`は業務payloadを標準入力の1 MiB以下のJSON objectから読み、コマンド引数・一覧・詳細に表示しない。未登録のjob名はworkerが隔離するため、運用者は生成済み契約の名前・版・queueを指定する。`retry`はdead/quarantined、`cancel`はpendingだけ成功する。`maintenance`は期限切れcache/token/reset/channel ticketを清掃し、ストレージ実体は誤削除を避けるためアプリ固有の`Storage::cleanup`をrunner等から呼ぶ。`console`はURLを引数に渡さず、復号済み接続情報を子`psql`のPG*環境変数へ渡す。`runner`は登録済み`src/bin/task-<snake_case>.rs`を起動する。
 
-T30の`generate middleware|mailer|job|channel`は新規ファイルの衝突を事前確認し、変更予定の差分を表示する。middlewareは`src/middlewares`へ生成し、router登録の式を表示する。job契約は`src/jobs`、処理入口は別binの`job-worker`、queueとfailure migrationも生成する。mailerは`src/mailers`、channelは認証生成後に別bin`channel-<name>`とticket migrationを生成する。`add otel`は標準HTTP serverと既存workerに`kouga-telemetry`初期化・終了時flushと各crateの`otel` featureを追加する。編集済みserverを安全に更新できない場合は変更案を表示して書き込まない。後から生成するjob/auth workerにも設定を引き継ぐ。gRPC binのOTel起動処理は自動編集せず、手動統合する。
+T30の`generate middleware|mailer|job|channel`は新規ファイルの衝突を事前確認し、変更予定の差分を表示する。middlewareは`src/middlewares`へ生成し、router登録の式を表示する。job契約は`crates/contracts/src/jobs`、処理入口は`apps/worker/src/bin/job-worker.rs`、queueとfailure migrationも生成する。mailerは`apps/worker/src/mailers`、channelは認証生成後に別bin`channel-<name>`とticket migrationを生成する。`add otel`は標準HTTP serverと既存workerに`kouga-telemetry`初期化・終了時flushと各crateの`otel` featureを追加する。編集済みserverを安全に更新できない場合は変更案を表示して書き込まない。後から生成するjob/auth workerにも設定を引き継ぐ。gRPC binのOTel起動処理は自動編集せず、手動統合する。
+
+T31以降、生成job契約と認証メールjob契約は`crates/contracts` package、実行handlerとmailerは`apps/worker` packageに置く。HTTP packageはcontractsとqueue投入にのみ依存し、worker/SMTPを引き込まない。worker packageはcontractsとqueue実行に依存し、HTTP router/OpenAPI UIを引き込まない。`kouga dockerfile`は現在の入口とworkerに応じ、`http`/`grpc`/`worker`/`mail-worker`/`admin`の対象targetを生成する。既存Dockerfileは上書きせず、Kouga checkoutをBuildKit named context `kouga`で渡し、ローカルpath依存はビルドステージ内でのみ置換する。
 
 初版の複数形は末尾`s`なら`es`、それ以外は`s`を付けるだけで、不規則変化は扱わない。複雑なschemaは通常のRust/SQLとして生成後に編集する。
 | kouga-test | T17 | HTTP/DB検証支援。http、migration |
