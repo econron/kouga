@@ -1,0 +1,354 @@
+//! Generated authentication routes. Keep mail delivery in auth-mail-worker, not HTTP.
+use crate::auth_mail::SendPasswordReset;
+use kouga_auth::{CurrentUser, hash_password, issue_token, revoke_user_tokens, verify_password};
+use kouga_cache::{RateDecision, RateLimiter};
+use kouga_core::{Error as CoreError, ErrorKind};
+use kouga_http::{ClientIp, Error, Extension, Json, NoContent, Router, State, Validated, endpoint};
+use kouga_model::{Db, Uuid, sqlx};
+use kouga_queue::Enqueue;
+use kouga_runtime::{BlockingPool, Config, Environment};
+use kouga_validation::Request;
+use sha2::{Digest, Sha256};
+use std::{sync::OnceLock, time::Duration};
+
+#[derive(Request)]
+pub struct RegisterRequest {
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 12, max = 1024))]
+    pub password: String,
+}
+
+#[derive(Request)]
+pub struct LoginRequest {
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 1, max = 1024))]
+    pub password: String,
+}
+
+#[derive(Request)]
+pub struct ResetRequestInput {
+    #[validate(email)]
+    pub email: String,
+}
+
+#[derive(Request)]
+pub struct ResetPasswordInput {
+    #[validate(length(min = 64, max = 64))]
+    pub token: String,
+    #[validate(length(min = 12, max = 1024))]
+    pub password: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct UserOutput {
+    pub id: String,
+    pub email: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct SessionOutput {
+    pub token: String,
+    pub user: UserOutput,
+}
+
+#[derive(serde::Serialize)]
+pub struct AcceptedOutput {
+    pub message: String,
+}
+
+impl schemars::JsonSchema for UserOutput {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "UserOutput".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::Schema::try_from(serde_json::json!({
+            "type": "object", "required": ["id", "email"],
+            "properties": {"id": {"type": "string", "format": "uuid"}, "email": {"type": "string", "format": "email"}}
+        })).expect("user schema")
+    }
+}
+
+impl schemars::JsonSchema for SessionOutput {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SessionOutput".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::Schema::try_from(serde_json::json!({
+            "type": "object", "required": ["token", "user"],
+            "properties": {"token": {"type": "string"}, "user": {"type": "object", "required": ["id", "email"],
+                "properties": {"id": {"type": "string", "format": "uuid"}, "email": {"type": "string", "format": "email"}}}}
+        })).expect("session schema")
+    }
+}
+
+impl schemars::JsonSchema for AcceptedOutput {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AcceptedOutput".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::Schema::try_from(serde_json::json!({
+            "type": "object", "required": ["message"], "properties": {"message": {"type": "string"}}
+        }))
+        .expect("accepted schema")
+    }
+}
+
+fn failure(kind: ErrorKind, code: &'static str, message: &'static str) -> Error {
+    Error(CoreError::new(kind, code, message))
+}
+fn unavailable() -> Error {
+    failure(
+        ErrorKind::Unavailable,
+        "auth_unavailable",
+        "Authentication unavailable",
+    )
+}
+fn invalid_credentials() -> Error {
+    failure(
+        ErrorKind::Unauthorized,
+        "invalid_credentials",
+        "Invalid credentials",
+    )
+}
+fn invalid_reset() -> Error {
+    failure(
+        ErrorKind::Validation,
+        "invalid_reset",
+        "Invalid or expired reset token",
+    )
+}
+
+fn pool() -> Result<BlockingPool, Error> {
+    static POOL: OnceLock<Result<BlockingPool, ()>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        let environment = Environment::from_env().map_err(|_| ())?;
+        let config = Config::load(".", environment).map_err(|_| ())?;
+        Ok(BlockingPool::new(&config))
+    })
+    .clone()
+    .map_err(|_| unavailable())
+}
+
+async fn hash(password: String) -> Result<String, Error> {
+    pool()?
+        .run(move || hash_password(&password))
+        .await
+        .map_err(|_| unavailable())?
+        .map_err(|_| unavailable())
+}
+
+async fn verify(password: String, encoded: String) -> Result<bool, Error> {
+    pool()?
+        .run(move || verify_password(&password, &encoded))
+        .await
+        .map_err(|_| unavailable())
+}
+
+async fn limit(db: &Db, ip: ClientIp, email: &str, namespace: &str) -> Result<(), Error> {
+    let limiter = RateLimiter::new(db.clone(), namespace, 5, Duration::from_secs(60))
+        .map_err(|_| unavailable())?;
+    let digest = Sha256::digest(email.as_bytes());
+    for key in [format!("ip:{}", ip.0), format!("account:{digest:x}")] {
+        match limiter.check(&key).await.map_err(|_| unavailable())? {
+            RateDecision::Allowed => (),
+            RateDecision::Denied { .. } => {
+                return Err(failure(
+                    ErrorKind::RateLimited,
+                    "rate_limited",
+                    "Rate limit exceeded",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn queue_reset(db: &Db, user_id: Uuid) -> Result<(), Error> {
+    SendPasswordReset { user_id }
+        .enqueue(db)
+        .await
+        .map_err(|_| unavailable())?;
+    Ok(())
+}
+
+#[endpoint(operation_id = "auth.register")]
+pub async fn register(
+    State(db): State<Db>,
+    Extension(ip): Extension<ClientIp>,
+    input: Validated<RegisterRequest>,
+) -> Result<Json<SessionOutput>, Error> {
+    let email = input.email.trim().to_ascii_lowercase();
+    limit(&db, ip, &email, "auth-register").await?;
+    let encoded = hash(input.password.clone()).await?;
+    let id = Uuid::new_v4();
+    let result = sqlx::query("INSERT INTO users(id, email, password_hash) VALUES ($1, $2, $3)")
+        .bind(id)
+        .bind(&email)
+        .bind(encoded)
+        .execute(&db)
+        .await;
+    if let Err(error) = result {
+        if error
+            .as_database_error()
+            .is_some_and(|db| db.code().as_deref() == Some("23505"))
+        {
+            return Err(failure(
+                ErrorKind::Conflict,
+                "email_taken",
+                "Email unavailable",
+            ));
+        }
+        return Err(unavailable());
+    }
+    let token = issue_token(&db, id, Duration::from_secs(24 * 3600))
+        .await
+        .map_err(|_| unavailable())?;
+    Ok(Json(SessionOutput {
+        token,
+        user: UserOutput {
+            id: id.to_string(),
+            email,
+        },
+    }))
+}
+
+#[endpoint(operation_id = "auth.login")]
+pub async fn login(
+    State(db): State<Db>,
+    Extension(ip): Extension<ClientIp>,
+    input: Validated<LoginRequest>,
+) -> Result<Json<SessionOutput>, Error> {
+    let email = input.email.trim().to_ascii_lowercase();
+    limit(&db, ip, &email, "auth-login").await?;
+    let row: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id, password_hash FROM users WHERE lower(email) = $1")
+            .bind(&email)
+            .fetch_optional(&db)
+            .await
+            .map_err(|_| unavailable())?;
+    // A missing account still runs Argon2; the response has the same shape.
+    let dummy = hash("dummy password never authenticates".into()).await?;
+    let encoded = match &row {
+        Some((_, encoded)) => encoded.clone(),
+        None => dummy,
+    };
+    let matched = verify(input.password.clone(), encoded).await?;
+    let Some((id, _)) = row.filter(|_| matched) else {
+        return Err(invalid_credentials());
+    };
+    let token = issue_token(&db, id, Duration::from_secs(24 * 3600))
+        .await
+        .map_err(|_| unavailable())?;
+    Ok(Json(SessionOutput {
+        token,
+        user: UserOutput {
+            id: id.to_string(),
+            email,
+        },
+    }))
+}
+
+#[endpoint(operation_id = "auth.logout")]
+pub async fn logout(
+    State(db): State<Db>,
+    Extension(actor): Extension<CurrentUser>,
+) -> Result<NoContent, Error> {
+    // This deliberately logs out every session, including those on other devices.
+    revoke_user_tokens(&db, actor.id)
+        .await
+        .map_err(|_| unavailable())?;
+    Ok(NoContent)
+}
+
+#[endpoint(operation_id = "auth.me")]
+pub async fn me(
+    State(db): State<Db>,
+    Extension(actor): Extension<CurrentUser>,
+) -> Result<Json<UserOutput>, Error> {
+    let email: Option<String> = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(actor.id)
+        .fetch_optional(&db)
+        .await
+        .map_err(|_| unavailable())?;
+    let email = email.ok_or_else(invalid_credentials)?;
+    Ok(Json(UserOutput {
+        id: actor.id.to_string(),
+        email,
+    }))
+}
+
+#[endpoint(operation_id = "auth.password_reset_request")]
+pub async fn reset_request(
+    State(db): State<Db>,
+    Extension(ip): Extension<ClientIp>,
+    input: Validated<ResetRequestInput>,
+) -> Result<Json<AcceptedOutput>, Error> {
+    let email = input.email.trim().to_ascii_lowercase();
+    limit(&db, ip, &email, "auth-reset").await?;
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE lower(email) = $1")
+        .bind(email)
+        .fetch_optional(&db)
+        .await
+        .map_err(|_| unavailable())?;
+    if let Some(user_id) = id {
+        queue_reset(&db, user_id).await?;
+    }
+    Ok(Json(AcceptedOutput {
+        message: "If the account exists, a reset email will be sent".into(),
+    }))
+}
+
+#[endpoint(operation_id = "auth.password_reset")]
+pub async fn reset_password(
+    State(db): State<Db>,
+    input: Validated<ResetPasswordInput>,
+) -> Result<NoContent, Error> {
+    if input.token.len() != 64 || !input.token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid_reset());
+    }
+    let encoded = hash(input.password.clone()).await?;
+    let digest = Sha256::digest(input.token.as_bytes()).to_vec();
+    let mut tx = db.begin().await.map_err(|_| unavailable())?;
+    let id: Option<Uuid> = sqlx::query_scalar("UPDATE kouga_password_resets SET consumed_at = now() WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now() RETURNING user_id")
+        .bind(digest).fetch_optional(&mut *tx).await.map_err(|_| unavailable())?;
+    let id = id.ok_or_else(invalid_reset)?;
+    sqlx::query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2")
+        .bind(encoded)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| unavailable())?;
+    sqlx::query("UPDATE kouga_password_resets SET consumed_at = now() WHERE user_id = $1 AND consumed_at IS NULL")
+        .bind(id).execute(&mut *tx).await.map_err(|_| unavailable())?;
+    sqlx::query(
+        "UPDATE kouga_auth_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| unavailable())?;
+    tx.commit().await.map_err(|_| unavailable())?;
+    Ok(NoContent)
+}
+
+pub fn routes(router: Router<Db>) -> Router<Db> {
+    let protected = kouga_http::auth::require_bearer(|db: &Db| db);
+    router
+        .post("/auth/register", register_endpoint())
+        .expect("auth route")
+        .post("/auth/login", login_endpoint())
+        .expect("auth route")
+        .post("/auth/password/reset-request", reset_request_endpoint())
+        .expect("auth route")
+        .post("/auth/password/reset", reset_password_endpoint())
+        .expect("auth route")
+        .post(
+            "/auth/logout",
+            logout_endpoint().middleware(protected.clone()),
+        )
+        .expect("auth route")
+        .get("/auth/me", me_endpoint().middleware(protected))
+        .expect("auth route")
+}

@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。認証用のルート名、登録ヘルパー、コードは公開APIの案です。
+> 下記の`kouga generate auth`と認証APIは実装済みです。後半の独自リソース例は設計案です。
 
 標準の認証を生成して、保護したいルートへ付けます。独自middlewareを書くのは、追加の振る舞いが必要になってからで構いません。
 
@@ -15,7 +15,7 @@ kouga db migrate
 
 User、トークン保存用のmigration、認証middleware、Request、controller、テストを生成します。メールによるパスワードリセットには、[メール用worker](jobs-and-mail.md)の設定も必要です。
 
-生成時に用意するルート案です。実際に公開するものは`routes.rs`で選びます。
+生成時に次のルートを`src/lib.rs`へ登録します。公開範囲を変える場合は、生成後にそこで編集してください。
 
 | 操作 | ルート |
 |---|---|
@@ -27,6 +27,9 @@ User、トークン保存用のmigration、認証middleware、Request、controll
 | パスワードリセット | `POST /auth/password/reset` |
 
 標準はBearerトークンです。ログインで得たトークンを、`Authorization: Bearer <token>`へ付けます。期限切れ・失効済み・未指定は401です。
+生成版のログアウトは、そのユーザーの全セッションを失効させます。
+
+リセット申請は存在するメールアドレスにも存在しないアドレスにも同じ応答を返します。HTTP側は送信ジョブを登録するだけです。別プロセスで`cargo run --bin auth-mail-worker`を起動し、`DATABASE_URL`、`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`を渡してください。SMTP認証が必要なら`KOUGA_SMTP_USER`と`KOUGA_SMTP_PASSWORD`も両方渡します。ローカル試験のメール受信サーバーには、`KOUGA_ENV=test`、`KOUGA_SMTP_HOST=127.0.0.1`、`KOUGA_SMTP_LOCAL=1`とポート番号を使えます。1件だけ処理して終了する場合は`--once`を付けます。平文リセットトークンはメールにのみ載り、DBにはハッシュを保存します。
 
 ## 保護する範囲を、ルートで決める
 
@@ -108,7 +111,7 @@ pub async fn require_user(
 
 ## 現在使えるmiddleware API（T10）
 
-以下は実装済みの低レベルHTTP APIです。上記の`resource(...)`や認証生成コマンドは引き続きプレビューです。
+以下は実装済みの低レベルHTTP APIです。上記の`resource(...)`記法は引き続きプレビューです。
 
 ```rust
 let router = Router::<AppState>::new()
@@ -128,7 +131,7 @@ let app = router.with_state(state);
 
 ## 現在使える認証コア（T18）
 
-`kouga-auth`のmigrationをアプリのmigrationへ追加して適用すると、共通の`hash_password`/`verify_password`、`issue_token`/`authenticate`/`revoke_token`を使えます。ユーザー表と登録・ログイン・リセットAPIの生成はまだT19以降です。
+`kouga-auth`のmigrationをアプリのmigrationへ追加して適用すると、共通の`hash_password`/`verify_password`、`issue_token`/`authenticate`/`revoke_token`を使えます。`kouga generate auth`ならユーザー表、認証・レート制限・queue・リセット用migrationとルートを一括生成します。
 
 ```rust,ignore
 use kouga_http::auth::require_bearer;
