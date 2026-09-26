@@ -17,6 +17,6 @@ kouga-db = { path = "../kouga-db" }
 percent-encoding = "=2.3.2"
 serde_json.workspace = true
 sqlx = { version = "=0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "uuid", "json"] }
-tokio = { version = "=1.53.1", features = ["rt-multi-thread"] }
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros"] }
 url = "=2.5.8"
 uuid = { version = "=1.26.1", features = ["v4"] }

@@ -9,6 +9,7 @@ mod api;
 mod auth;
 mod container;
 mod contracts;
+mod db;
 mod features;
 mod lambda;
 mod operations;
@@ -123,6 +124,36 @@ enum DbCommand {
     Create,
     Migrate,
     Status,
+    Rollback {
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+        steps: u32,
+    },
+    Schema {
+        #[arg(long, default_value = "db/schema.sql")]
+        output: PathBuf,
+    },
+    /// Run the registered src/bin/task-seed.rs application task.
+    Seed,
+    Repair {
+        #[arg(long)]
+        version: String,
+        #[arg(long, value_enum)]
+        state: db::RepairTarget,
+        #[arg(long)]
+        reason: String,
+    },
+    Reset {
+        #[arg(long)]
+        database: String,
+        #[arg(long, value_enum)]
+        environment: db::TargetEnvironment,
+        #[arg(long)]
+        allow_destructive: bool,
+        #[arg(long)]
+        allow_production: bool,
+        #[arg(long)]
+        seed: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,14 +210,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
         Commands::Generate { command } => resource::generate(command)?,
-        Commands::Db { command } => {
-            check_app()?;
-            run_app(match command {
-                DbCommand::Create => "db-create",
-                DbCommand::Migrate => "db-migrate",
-                DbCommand::Status => "db-status",
-            })?;
-        }
+        Commands::Db { command } => db::run(command)?,
         Commands::Jobs { command } => operations::jobs(command)?,
         Commands::Maintenance => operations::maintenance()?,
         Commands::Console => operations::console()?,
