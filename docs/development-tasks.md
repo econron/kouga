@@ -916,15 +916,17 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T39 — DB管理CLIの残項目
 
-- 状態: 未着手
+- 状態: レビュー待ち
 - ブランチ: `task/T39-db-cli-completion`
-- worktree: `.worktrees/T39-db-cli-completion`（作成前）
+- worktree: `.worktrees/T39-db-cli-completion`
 - 依存: T34
 - 対応仕様: 4.5、4.17
 
 **実装すること**: migration libraryには存在するがCLIから使えない`rollback/status/schema/seed/repair`を、既存の破壊的操作の安全策とCLIエラー契約に合わせて接続する。
 
 **完了条件**: 生成アプリの実DBで正常・失敗・dirty・改変・同時実行を検証し、`reset`は確認なしの本番破壊を許さない。利用者ガイドのコマンド例とCLIの実装が一致する。
+
+**実装・検証**: `db migrate/status/rollback/repair/reset`をmigration APIへ接続し、statusに可逆性を表示。`db schema`は`pg_dump`、`db seed`は登録済み`task-seed`を実行し、未登録・失敗は非ゼロ。resetはDB名・環境・破壊許可を必須にし、本番は追加許可、`KOUGA_ENV`設定時は一致を検査、`--seed`未登録は削除前に拒否する。生成アプリの専用PostgreSQL DBで同時migrate一度だけ、通常DDL失敗、不可逆rollbackの全件事前拒否、改変検出、非transactional dirtyと改変時repair拒否・手動修復後のpending復旧、resetの拒否と成功を確認。Docker内の実`pg_dump`経由でschemaの成功とデータ・所有者・権限の非出力を確認。CLI失敗は非ゼロで、出力にDB接続URLを含まない。`cargo +1.94.0 fmt --all --check`、workspace全体clippy `-D warnings`、workspace全体test、実DB CLIテストが成功。seedの登録処理は利用アプリ側で実装する契約とし、テストでは登録・未登録・異常終了のCLI伝播を確認（モデルAPIを使う個別seedの内容は利用アプリ次第）。
 
 ### T40 — 初版の残件再監査
 

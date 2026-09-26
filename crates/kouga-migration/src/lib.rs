@@ -235,6 +235,8 @@ pub struct MigrationStatus {
     pub version: String,
     pub name: String,
     pub state: MigrationState,
+    /// Whether a non-empty down migration is present.
+    pub reversible: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -420,6 +422,7 @@ fn check(set: &MigrationSet, rows: &[HistoryRow]) -> Result<Vec<MigrationStatus>
             Ok(MigrationStatus {
                 version: file.version.clone(),
                 name: file.name.clone(),
+                reversible: file.down.as_deref().is_some_and(has_sql),
                 state: match row.map(|r| r.5.as_str()) {
                     Some("applied") => MigrationState::Applied,
                     Some("dirty") => MigrationState::Dirty,

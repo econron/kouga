@@ -22,6 +22,10 @@
 | 開発DBを作成 | `kouga db create` |
 | migrationを適用 | `kouga db migrate` |
 | 適用状況を確認 | `kouga db status` |
+| 最新のmigrationを戻す | `kouga db rollback --steps 1` |
+| dirty履歴を手動修復後に記録 | `kouga db repair --version ID --state pending --reason '修復内容'` |
+| schemaを確認用に出力 | `kouga db schema`（`pg_dump`が必要） |
+| 登録済みseedを実行 | `kouga db seed` |
 | 認証を追加 | `kouga generate auth` |
 | ジョブを追加 | `kouga generate job SendWelcomeEmail user_id:uuid` |
 | メールを追加 | `kouga generate mailer Welcome` |
