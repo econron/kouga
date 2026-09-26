@@ -7,6 +7,7 @@ use kouga_http::{
     ValidatedQuery, endpoint,
 };
 use kouga_model::{Db, Model, Uuid, sqlx};
+use kouga_queue::Enqueue;
 use kouga_validation::{Request, ValidationError};
 use std::time::Duration;
 
@@ -300,6 +301,19 @@ impl Board {
         .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
+        app_contracts::task_notice::TaskCreatedV2 {
+            task_id: value.id,
+            owner_id: actor,
+        }
+        .enqueue(&mut *tx)
+        .await
+        .map_err(|_| {
+            failure(
+                ErrorKind::Internal,
+                "job_enqueue_failed",
+                "Task notification unavailable",
+            )
+        })?;
         Self::invalidate_in(&mut tx, project_id).await?;
         crate::realtime::task_changed(&mut tx, actor, value.id, "created")
             .await
