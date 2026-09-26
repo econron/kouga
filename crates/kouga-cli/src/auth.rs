@@ -47,6 +47,7 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
     for name in [
         "kouga-auth",
         "kouga-cache",
+        "kouga-queue",
         "kouga-job",
         "kouga-runtime",
         "kouga-worker",

@@ -4,8 +4,8 @@ use kouga_auth::{CurrentUser, hash_password, issue_token, revoke_user_tokens, ve
 use kouga_cache::{RateDecision, RateLimiter};
 use kouga_core::{Error as CoreError, ErrorKind};
 use kouga_http::{ClientIp, Error, Extension, Json, NoContent, Router, State, Validated, endpoint};
-use kouga_job::Job;
 use kouga_model::{Db, Uuid, sqlx};
+use kouga_queue::Enqueue;
 use kouga_runtime::{BlockingPool, Config, Environment};
 use kouga_validation::Request;
 use sha2::{Digest, Sha256};
@@ -166,10 +166,10 @@ async fn limit(db: &Db, ip: ClientIp, email: &str, namespace: &str) -> Result<()
 }
 
 async fn queue_reset(db: &Db, user_id: Uuid) -> Result<(), Error> {
-    let payload = serde_json::to_value(SendPasswordReset { user_id }).map_err(|_| unavailable())?;
-    sqlx::query("INSERT INTO kouga_jobs(name, version, queue, payload, available_at) VALUES ($1, $2, $3, $4, now())")
-        .bind(SendPasswordReset::NAME).bind(SendPasswordReset::VERSION as i32)
-        .bind(SendPasswordReset::QUEUE).bind(payload).execute(db).await.map_err(|_| unavailable())?;
+    SendPasswordReset { user_id }
+        .enqueue(db)
+        .await
+        .map_err(|_| unavailable())?;
     Ok(())
 }
 

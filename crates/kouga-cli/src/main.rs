@@ -5,8 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-mod auth;
 mod api;
+mod auth;
 mod resource;
 
 #[derive(Parser)]
