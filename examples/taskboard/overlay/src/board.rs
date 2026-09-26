@@ -7,6 +7,7 @@ use kouga_http::{
     ValidatedQuery, endpoint,
 };
 use kouga_model::{Db, Model, Uuid, sqlx};
+use kouga_queue::Enqueue;
 use kouga_validation::{Request, ValidationError};
 use std::time::Duration;
 
@@ -275,7 +276,7 @@ impl Board {
             return Err(invalid());
         }
         let mut tx = self.db.begin().await.map_err(db)?;
-        let value = sqlx::query_as(
+        let value: Task = sqlx::query_as(
             "INSERT INTO tasks (id, project_id, owner_id, title) VALUES ($1,$2,$3,$4) RETURNING *",
         )
         .bind(Uuid::new_v4())
@@ -285,6 +286,19 @@ impl Board {
         .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
+        app_contracts::task_notice::TaskCreatedV2 {
+            task_id: value.id,
+            owner_id: actor,
+        }
+        .enqueue(&mut *tx)
+        .await
+        .map_err(|_| {
+            failure(
+                ErrorKind::Internal,
+                "job_enqueue_failed",
+                "Task notification unavailable",
+            )
+        })?;
         Self::invalidate_in(&mut tx, project_id).await?;
         tx.commit().await.map_err(db)?;
         Ok(value)
