@@ -1,0 +1,19 @@
+syntax = "proto3";
+package taskboard;
+
+service Board {
+  rpc CreateProject(CreateProjectRequest) returns (ProjectReply);
+  rpc CreateTask(CreateTaskRequest) returns (TaskReply);
+  rpc GetTask(GetTaskRequest) returns (TaskReply);
+  rpc CompleteTask(CompleteTaskRequest) returns (TaskReply);
+  rpc GetProjectCount(GetProjectCountRequest) returns (ProjectCountReply);
+}
+
+message CreateProjectRequest { string slug = 1; string name = 2; }
+message ProjectReply { string id = 1; string slug = 2; string name = 3; }
+message CreateTaskRequest { string project_id = 1; string title = 2; }
+message GetTaskRequest { string id = 1; }
+message CompleteTaskRequest { string id = 1; }
+message TaskReply { string id = 1; string project_id = 2; string title = 3; bool completed = 4; }
+message GetProjectCountRequest { string project_id = 1; }
+message ProjectCountReply { int64 total = 1; int64 completed = 2; }

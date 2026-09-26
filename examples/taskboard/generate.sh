@@ -30,6 +30,7 @@ cp "$fixture_dir/overlay/src/bin/task-complete.rs" "$destination/src/bin/task-co
 cp "$fixture_dir/overlay/tests/taskboard.rs" "$destination/tests/taskboard.rs"
 cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.up.sql" "$destination/migrations/20990101000000_taskboard.up.sql"
 cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.down.sql" "$destination/migrations/20990101000000_taskboard.down.sql"
+bash "$fixture_dir/enable-grpc.sh" "$destination" "$repo_dir"
 sed -i.bak '1i\
 pub mod board;\
 ' "$destination/src/lib.rs"

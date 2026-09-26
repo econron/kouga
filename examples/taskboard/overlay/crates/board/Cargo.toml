@@ -1,0 +1,18 @@
+[package]
+name = "taskboard-board"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+
+[features]
+http = []
+
+[dependencies]
+app-contracts = { package = "taskboard-contracts", path = "../contracts" }
+kouga-cache = { path = "KOUGA_SOURCE/crates/kouga-cache", default-features = false }
+kouga-core = { path = "KOUGA_SOURCE/crates/kouga-core" }
+kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
+kouga-queue = { path = "KOUGA_SOURCE/crates/kouga-queue" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+tracing = "=0.1.44"

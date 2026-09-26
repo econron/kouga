@@ -248,6 +248,7 @@ impl RateLimiter {
 }
 
 /// The key selector may read ClientIp or a verified CurrentUser extension.
+#[cfg(feature = "http")]
 pub fn rate_limit<S, F>(limiter: RateLimiter, key: F) -> kouga_http::Middleware<S>
 where
     S: Clone + Send + Sync + 'static,
