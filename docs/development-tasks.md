@@ -1,8 +1,8 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T30統合済み。T31はレビュー待ち
-対象: 初版の全機能（35タスク）
+状態: T00〜T34統合済み。T34監査で初版未達と判定し、T35以降で残件を追跡
+対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
 
@@ -72,8 +72,14 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 完了 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 統合済み |
 | T32 | 配備先への実行対応 | T31、T27 | 統合済み |
-| T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | レビュー待ち |
-| T34 | 初版の横断検証・計測 | T33 | 未着手 |
+| T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 統合済み |
+| T34 | 初版の横断検証・計測 | T33 | 統合済み（初版未達） |
+| T35 | 認可付き業務サンプル基盤 | T34 | 未着手 |
+| T36 | queue再起動・旧payload互換 | T35 | 未着手 |
+| T37 | 添付・WebSocket業務連携 | T35 | 未着手 |
+| T38 | 共通業務処理へのgRPC入口 | T35 | 未着手 |
+| T39 | DB管理CLIの残項目 | T34 | 未着手 |
+| T40 | 初版の残件再監査 | T36、T37、T38、T39 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -833,7 +839,7 @@ Rust 1.94のKouga workspace `fmt --check`・`clippy --workspace --all-targets --
 
 ### T34 — 初版の横断検証・計測
 
-- 状態: レビュー待ち（初版完成判定は未達）
+- 状態: 統合済み（初版完成判定は未達）
 - 担当者: Codex
 - ブランチ: `task/T34-release-verification`
 - worktree: `.worktrees/T34-release-verification`
@@ -855,3 +861,79 @@ Rust 1.94のKouga workspace `fmt --check`・`clippy --workspace --all-targets --
 Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- -D warnings`は成功。実DB付きworkspace全テスト初回は共有PostgreSQLの`pg_stat_statements`未事前ロード（SQLSTATE 55000）で停止したため、共有設定を変えず、同拡張を事前ロードしたT34専用PostgreSQL 17で再実行して成功。`kouga-worker --features otel --test trace_flow`も実DB/ローカルCollectorで成功。S3はendpoint未提供のため今回の実サービス再確認対象外。T34専用HTTP/worker/PostgreSQLコンテナは停止・削除済み、計測専用DB `kouga_t34_bench`は共有検証用PostgreSQL内で他DBと分離して残置。
 
 **初版完成判定: 未達。** 単一生成アプリでの所有者別CRUD、集計cache無効化、実worker強制終了→再起動時の冪等業務更新、生成HTTP添付route/権限、WebSocket業務policy、password reset後の接続失効、HTTP/gRPCから同じ業務処理への認可付き呼び出し、および旧payloadを新workerが読む更新試験が不足。実Cloud Run/ECS/Lambdaと実S3再確認も未実施。これらを満たすまで初版完成・公開可能としない。
+
+## 5. T34監査後の残件
+
+[横断監査](release-verification.md)で明らかになった初版必須シナリオを、同じ生成アプリを段階的に拡張する作業へ分ける。T35とT39は並行可能。T36〜T38はT35の共通fixtureを取り込み、それぞれ別のブランチ・worktreeで並行し、一件ずつ統合する。T40は機能の代替ではなく再監査である。実クラウドdeployや外部レジストリpushは引き続き行わない。
+
+### T35 — 認可付き業務サンプル基盤
+
+- 状態: 未着手
+- ブランチ: `task/T35-business-sample`
+- worktree: `.worktrees/T35-business-sample`（作成前）
+- 依存: T34
+- 対応仕様: 4.3、4.4、4.6、4.11、第6節2〜4
+
+**実装すること**: 再生成可能な単一Taskboardアプリfixtureを作り、User→Project→Taskの所有者scope、外部キー・一意制約、関連preload・ページング、集計cacheの更新時無効化を接続する。
+
+**完了条件**: 別ユーザーの一覧・詳細・更新・削除が拒否され、未知属性/不正入力ではcontrollerとDB更新が起きない。並行重複書き込みはDB制約で拒否され、HTTP以外の経路でも業務不変条件を守る。新規ディレクトリから生成・実DBテスト・文書化できる。
+
+### T36 — queue再起動・旧payload互換
+
+- 状態: 未着手
+- ブランチ: `task/T36-queue-compat`
+- worktree: `.worktrees/T36-queue-compat`（作成前）
+- 依存: T35
+- 対応仕様: 4.9、4.10、第6節5〜6、12
+
+**実装すること**: T35の業務処理でTask作成と通知job投入を同一transactionへ接続し、実workerの強制終了→lease再取得・冪等更新、再試行・メール配送、旧payloadを新workerが処理する更新試験を用意する。
+
+**完了条件**: 途中終了後の重複副作用がなく、失敗の再試行と恒久失敗が区別される。旧versionのpayloadを新workerが読むか、互換性方針に従う明示的な移行を検証する。HTTP/workerの依存分離を維持する。
+
+### T37 — 添付・WebSocket業務連携
+
+- 状態: 未着手
+- ブランチ: `task/T37-storage-channel-app`
+- worktree: `.worktrees/T37-storage-channel-app`（作成前）
+- 依存: T35
+- 対応仕様: 4.12、4.13、第6節7〜9
+
+**実装すること**: T35の業務アプリへ所有者限定の添付upload/download/delete、削除失敗の清掃再試行、Task変更通知と認可付き購読を接続する。
+
+**完了条件**: 別HTTP/Channel processへ通知が届き、他ユーザーの添付・購読を拒否する。password reset後の旧token/ticket/接続の扱いと確認間隔を実DB・実通信で確認し、ローカル保存と既存S3 adapterの差を明記する。
+
+### T38 — 共通業務処理へのgRPC入口
+
+- 状態: 未着手
+- ブランチ: `task/T38-business-grpc`
+- worktree: `.worktrees/T38-business-grpc`（作成前）
+- 依存: T35
+- 対応仕様: 4.19、第6節14
+
+**実装すること**: T35の同じ業務操作をHTTP/JSONとgRPC/Protobufから呼び、認証・認可・validation・DB制約・job投入・エラー変換を両入口で検証する。
+
+**完了条件**: 実クライアントで同じDB結果が得られ、不正入力・他ユーザー操作・期限・失敗statusがそれぞれ正しく拒否される。HTTP/gRPCを独立ビルドし、通常HTTPにProtobuf依存を混入させない。
+
+### T39 — DB管理CLIの残項目
+
+- 状態: 未着手
+- ブランチ: `task/T39-db-cli-completion`
+- worktree: `.worktrees/T39-db-cli-completion`（作成前）
+- 依存: T34
+- 対応仕様: 4.5、4.17
+
+**実装すること**: migration libraryには存在するがCLIから使えない`rollback/status/schema/seed/repair`を、既存の破壊的操作の安全策とCLIエラー契約に合わせて接続する。
+
+**完了条件**: 生成アプリの実DBで正常・失敗・dirty・改変・同時実行を検証し、`reset`は確認なしの本番破壊を許さない。利用者ガイドのコマンド例とCLIの実装が一致する。
+
+### T40 — 初版の残件再監査
+
+- 状態: 未着手
+- ブランチ: `task/T40-release-closure`
+- worktree: `.worktrees/T40-release-closure`（作成前）
+- 依存: T36、T37、T38、T39
+- 対応仕様: 第5・6節、全受け入れ条件
+
+**実装すること**: T34の[監査表](release-verification.md)を実証に基づいて更新し、単一生成アプリの全シナリオ、実サービス・依存グラフ・配布/互換性方針を再判定する。
+
+**完了条件**: 必須の未達が残れば「初版完成」とせず、追加の実装タスクを明示する。固定条件の性能測定を再実施し、回帰・制約・未検証を記録する。公開・deployは行わない。
