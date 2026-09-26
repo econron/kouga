@@ -804,7 +804,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T33 — 利用者ガイドと通しのサンプル
 
-- 状態: レビュー待ち
+- 状態: 統合済み
 - 担当者: Codex
 - ブランチ: `task/T33-user-journey`
 - worktree: `.worktrees/T33-user-journey`
@@ -833,10 +833,10 @@ Rust 1.94のKouga workspace `fmt --check`・`clippy --workspace --all-targets --
 
 ### T34 — 初版の横断検証・計測
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち（初版完成判定は未達）
+- 担当者: Codex
 - ブランチ: `task/T34-release-verification`
-- worktree: `.worktrees/T34-release-verification`（作成前）
+- worktree: `.worktrees/T34-release-verification`
 - 依存: T33
 - 対応仕様: 全機能の受け入れ条件、第5・6節
 - 主担当領域: 横断検証・性能/サイズ記録・完成判定
@@ -845,9 +845,13 @@ Rust 1.94のKouga workspace `fmt --check`・`clippy --workspace --all-targets --
 
 **完了条件**
 
-- [ ] 並行更新・障害・再起動・権限・context漏れ・旧payload互換・依存分離の未解決事項を確認し、必須失敗があれば完了にしない。
-- [ ] 固定条件でthroughput/latency/memory/起動時間/イメージサイズを測定し、対応版・再現手順・制約・未検証事項を記録する。
+- [x] 並行更新・障害・再起動・権限・context漏れ・旧payload互換・依存分離の未解決事項を確認し、必須失敗があれば完了にしない。
+- [x] 固定条件でthroughput/latency/memory/起動時間/イメージサイズを測定し、対応版・再現手順・制約・未検証事項を記録する。
 
 **今回含めないこと**: 自動公開・自動release、各機能のテストをここまで先送りすること。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: [横断監査と実測値](release-verification.md)に仕様の基本22条件・追加条件、第5・6節の証拠/不足を対応付けた。4 VU×15秒の同一Mac/Docker Desktop環境で、JSON 5,931 req/s・DB単件1,419 req/s・CRUD一巡307巡/s、別workerの簡単なjob 1000件は約305件/s、HTTP起動0.292秒を実測。メモリ1点観測、p50/p95/p99、イメージ展開サイズ、再現条件と制約を同文書に記録した。これは性能保証ではない。
+
+Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- -D warnings`は成功。実DB付きworkspace全テスト初回は共有PostgreSQLの`pg_stat_statements`未事前ロード（SQLSTATE 55000）で停止したため、共有設定を変えず、同拡張を事前ロードしたT34専用PostgreSQL 17で再実行して成功。`kouga-worker --features otel --test trace_flow`も実DB/ローカルCollectorで成功。S3はendpoint未提供のため今回の実サービス再確認対象外。T34専用HTTP/worker/PostgreSQLコンテナは停止・削除済み、計測専用DB `kouga_t34_bench`は共有検証用PostgreSQL内で他DBと分離して残置。
+
+**初版完成判定: 未達。** 単一生成アプリでの所有者別CRUD、集計cache無効化、実worker強制終了→再起動時の冪等業務更新、生成HTTP添付route/権限、WebSocket業務policy、password reset後の接続失効、HTTP/gRPCから同じ業務処理への認可付き呼び出し、および旧payloadを新workerが読む更新試験が不足。実Cloud Run/ECS/Lambdaと実S3再確認も未実施。これらを満たすまで初版完成・公開可能としない。
