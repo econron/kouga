@@ -1,4 +1,79 @@
-# 初版横断監査（T34）
+# 初版再監査（T40）
+
+対象は main `3dee5fc`（T36〜T39統合後）、Rust 1.94.0、2026-09-26。判定は**初版未達**である。T35〜T38により所有者別CRUD、通知job、添付、別process WebSocket、業務gRPCが同一の再生成可能なTaskboardに接続された。T39でDB管理CLIも追加された。ただし「コードにある」「実DBテストに成功」と「仕様第6節を一つの配布可能なアプリとして満たす」は区別する。以下が現行判定であり、後半の「T34時点」は比較用の履歴である。
+
+### T40の再現条件と証拠の強さ
+
+`examples/taskboard/generate.sh`を現在のKouga CLIで実行し、`/private/tmp/kouga-t40-taskboard-current`を新規生成した。`TEST_DATABASE_URL=postgres://postgres:…@127.0.0.1:54156/kouga_t19`（専用schemaをテストごとに作成）、`CARGO_TARGET_DIR=<Kouga checkout>/target`、`cargo +1.94.0 test --workspace --locked --offline -- --test-threads=1`が成功。PostgreSQL 17は既存の検証専用コンテナであり、SMTPはテスト内のloopback sink。実S3・実クラウド・外部SMTP/TLSは今回の試験ではない。生成元CLIが古いと別worktreeへの絶対path依存が混じりCargo.lockのpackage collisionとなるため、生成前に現在のcheckoutで`cargo +1.94.0 build -p kouga-cli --locked --offline`を実施した。これはfixtureの欠陥ではなく、現行のローカルpath配布方式の制約である。
+
+### 受け入れ条件の再判定
+
+「確認」は当該条件に対する試験があること、「限定」は一部だけ、「未達」は必須の証拠または実装がないことを示す。T34の22基本条件と追加条件を省略せず再判定した。個別crateの過去の実証を単一Taskboardの結果に読み替えない。
+
+| 仕様 | T40判定 | 新たな証拠と残件 |
+|---|---|---|
+| 3.1 実行モデル | 限定 | Tokio 1/複数thread、制限・停止はcrate試験。Taskboard複合負荷時の公平性・終了は未実測。 |
+| 3.2–3.3 役割別ビルド・配備 | **未達** | 通常依存treeでHTTPにSMTP/worker/tonic/prost、gRPCにHTTP/OpenAPI、workerにHTTP/OpenAPIは入らない。生成DockerfileはHTTP/gRPC/auth-mail-worker/adminのみ。業務通知worker、Channel、添付清掃のtargetがない。実クラウド未配備。 |
+| 4.1 Router | 確認 | T34のルート競合・404/405/HEAD/OPTIONS試験を維持。 |
+| 4.2 Middleware | 限定 | 順序・短絡・サイズ・timeoutはcrate試験。Taskboardのレート超過と複数HTTP processでの共有制限は未実証。 |
+| 4.3 Auth基本 | 確認 | 生成fixtureの`auth_lifecycle_and_single_use_reset`、`taskboard`、`attachment_channel`試験で登録、所有者拒否、旧token/ticket失効と既存socket切断。 |
+| 4.3 Auth追加 | 限定 | 401短絡/503はcrate試験。Taskboardの認証登録変更→OpenAPI差分試験は未実施。 |
+| 4.4 Model基本 | 確認 | Taskboardの所有者別CRUD、preload、runnerの他owner拒否・完了不可逆を実DBで試験。 |
+| 4.4 Model追加 | 限定 | Taskboardで並行重複、FK、cache/job同一transactionを試験。省略/null/未知enum等の全組合せと同時更新競合は個別crateのみ。 |
+| 4.5 Migration基本・追加 | 確認 | T39の実DB CLI、従来のmigration/admin試験で適用、rollback、dirty/repair、改変、同時実行。 |
+| 4.6 Validation基本・追加 | 確認 | Taskboardで未知属性・不正値の書込防止。custom/async/PATCH三態等はvalidation crate試験。 |
+| 4.7 JSON / 4.8 Error | 確認 | 生成fixtureの公開型とエラーを含むHTTP試験、従来の形式/秘匿試験。 |
+| 4.9 Mailer | 限定 | 実loopback SMTPで通知送信・一時失敗→再試行。添付付きメールと外部TLS relayはこのfixtureで未実証。 |
+| 4.10 Queue/Worker | 確認 | `task_notice`でTask+job同時commit/rollback、実worker kill→lease再取得・attempt 2・DB効果1回、旧v1 payloadを新workerが処理。SMTP受理後の重複はat-least-onceの既知制約。 |
+| 4.11 Cache | 確認 | Taskboardのproject件数をPostgreSQL cacheで共有し、Task変更transaction内で無効化。TTL/容量/障害はcrate試験。 |
+| 4.12 Storage | 限定 | 生成HTTPで所有者限定upload/download/delete、削除失敗→`delete_pending`→清掃再試行。実S3は未実証。 |
+| 4.13 WebSocket | 確認 | 別Channel processへ通知、他owner購読拒否、reset後の旧token/ticket拒否と既存接続切断を生成fixtureで試験。 |
+| 4.14 Config | 確認 | 設定優先順位・秘密ファイル・欠落/競合・秘匿は従来のcrate/生成試験。 |
+| 4.15 Logs/Health | 限定 | readinessのDB失敗はcrate試験。TaskboardのDB停止・rate超過・終了時ログ/メトリクスは未実証。 |
+| 4.15.1 OTel追加 | 限定 | 別のtrace-flow/Collector試験にHTTP→DB→job→worker→mail、context分離・停止時継続がある。Taskboard自体はOTel exporter/独自span・metricsを設定しておらず第6節13未達。 |
+| 4.16 Test | 確認 | 生成Taskboardで認証・認可・入力・DB制約/transaction失敗を独立した実DB schemaで再現。 |
+| 4.17 CLI | 限定 | T39で`db status/rollback/repair/reset/schema/seed`を実DB試験。Taskboardには登録済みseedがなく、第6節1の同一アプリseed実行は未達。 |
+| 4.18 OpenAPI | 限定 | ルートから仕様生成・差分検出/開発UI/本番非公開はcrate/CLI試験。TaskboardのCRUD・認証・添付全体と制約変更後のcheck失敗→再生成成功の通し試験は未実証。 |
+| 4.19 HTTP/gRPC | 確認 | `apps/grpc/tests/board.rs`で同じBoardを両入口から呼び、認証前検証・他owner拒否・不正入力・DB一意制約・jobを検査。`grpc_task_notice`で別worker/SMTPも接続。gRPCイメージのT40実ビルドは別途判定。 |
+
+### 第5節と第6節の再判定
+
+Linux/arm64の役割別コンテナはT31で原型を検証したが、統合Taskboardは独自binaryを含むイメージ一式を作れない。Rust 1.94/macOS開発は確認。DB障害、終了処理、rate-limit、OTel Collector停止を**同じTaskboardで**試す横断証拠は不足。公開APIと生成コードの互換性/配布方針も未確定である。初版完成を宣言しない。
+
+| §6 | 判定 | 同一生成Taskboardの根拠または不足 |
+|---:|---|---|
+| 1 | 限定 | 生成、DB migration、テスト、HTTP/worker起動の証拠はある。登録済みseedの実行がない。 |
+| 2 | 確認 | 所有者別Project/Task CRUDと他owner拒否。 |
+| 3 | 確認 | validation短絡、未知属性、並行重複とDB制約、JSON error。 |
+| 4 | 確認 | 関連preload、ページング、project件数cacheと変更時無効化。 |
+| 5 | 確認 | Task+job同時transaction、別workerの実SMTP sink送信。 |
+| 6 | 確認 | 実worker kill→lease再取得、DB効果一回、旧payload。SMTP配送自体は重複可能。 |
+| 7 | 確認 | 所有者限定の添付HTTP、削除失敗後の清掃再試行。S3は別の未実証条件。 |
+| 8 | 確認 | 別process Channelへ変更通知、他owner購読拒否。 |
+| 9 | 確認 | reset後の旧token/ticket拒否と所定間隔での既存socket切断。 |
+| 10 | **未達** | Taskboard全経路のログ/metrics、DB停止/readiness、rate超過、終了処理の通し試験がない。 |
+| 11 | 限定 | 自動OpenAPI/UIの個別証拠。Taskboard制約変更と認証・添付を含む差分検査がない。 |
+| 12 | **未達** | 通常依存分離と旧payloadは確認。生成Dockerfileに通知worker/Channel/清掃targetがなく、全役割の独立イメージと連携を確認できない。 |
+| 13 | **未達** | TaskboardにOTelを追加したservice別Collector、独自span/log/metrics、停止時継続の試験がない。 |
+| 14 | 確認 | 共通Boardを使う両入口と実DB/jobを確認。独立gRPC release imageを起動し、HTTP発行tokenで業務RPC成功、無認証RPCは`Unauthenticated`。 |
+
+重点観点の変化: 並行重複書込・reset token一回性、実worker kill/再起動、他owner拒否、旧v1 payload互換は単一fixtureで実証された。OTelの並行HTTP/gRPC/worker context混入は別crate試験のみで、Taskboardには未接続。SMTP受理後の停止でのメール重複は仕様上残る。通常依存treeは`cargo tree --locked --offline -e normal -p <package>`で確認し、dev-dependencyを含むtreeとは区別した。現行fixtureのローカルpath依存はcheckout移動/古いCLIで壊れ得るため、公開配布の互換性方針が必要である。
+
+### T40の統合版イメージと固定条件実測
+
+Linux/arm64の統合Taskboard `http`（展開114,820,156 B）、`admin`（101,381,817 B）、`grpc`（103,676,924 B）、`worker`（auth-mail-worker、102,293,092 B）を`docker build --build-context kouga=<T40 checkout> --target <target>`で個別release buildした。adminは`--read-only --tmpfs /tmp`の非root UID 65532で専用DBに5 migrationを適用。HTTPも非root/read-onlyで起動し`GET /health`が200。gRPCは別ポート/別コンテナで起動し、HTTPで発行したtokenを用いた`Board.CreateProject`成功と無認証`Board.GetProjectCount`の`Unauthenticated`を`grpcurl`で確認。HTTP/gRPCはSIGTERM後exit 0、OOMなし。auth-mail-workerは非root/read-onlyで空の`mail` queueを`--once`処理してexit 0。イメージはツールチェーンを含まない。今回Docker内の実SMTP送信やgRPC起点jobの別worker配送までは試しておらず、生成fixtureの実DB/SMTPテストを根拠とする。DockerfileにはTaskboard独自の通知worker/Channel/清掃targetが存在せず、全役割のイメージ連携は未達（T41）。
+
+MacBook Air arm64（Darwin 24.1.0、8論理CPU、RAM 16GiB）、Docker Desktop Engine 29.7.2、k6 1.2.3、PostgreSQL 17。HTTPは`--memory 256m --cpus 2 --read-only --tmpfs /tmp`、`PORT=8080`をホスト`127.0.0.1:18086`へ公開、DBは同Macの別Dockerコンテナ`host.docker.internal:54156/kouga_t40_bench`、poolは生成アプリ既定値。測定前に単一ownerを登録しProjectと固定read用Taskを作成。`4 VU×15秒`、各モード1回、keep-alive、warm-upなし、モード順はJSON→read→CRUD。TLS/外部ネットワーク、同時worker、Channel、OTelは含まない。CRUDはTask作成→取得→完了→削除の4 HTTP requestで、作成時に通知jobを同一transactionで登録するが、この測定中はworkerを動かしていない。`[再現スクリプト](../benchmarks/t40-taskboard.sh)`が独立DB上でユーザーを用意して3モードを走らせる。summary原本は`/private/tmp/kouga-t40-{json,read,crud}-summary.json`（Git管理外）。
+
+| 操作 | request/s | p50 | p95 | p99 | HTTP数 | check |
+|---|---:|---:|---:|---:|---:|---:|
+| JSON `/health` | 2,216.6 | 0.750 ms | 3.799 ms | 13.483 ms | 33,874 | 100% |
+| 認可付きTask単件 | 163.6 | 15.66 ms | 51.36 ms | 167.06 ms | 2,456 | 100% |
+| Task CRUD（4 request/巡） | 74.6 | 29.78 ms | 110.05 ms | 801.91 ms | 1,124 | 100% |
+
+CRUDは281巡/15秒（18.65巡/s）。測定**後**のHTTPメモリ1点観測は3.051 MiB/256 MiB、共有DBコンテナ全体は97.07 MiBで、ピークではない。T34の素のTask resourceではHTTP認証・Board・関連取得・cache・通知job・添付/Channelルートを持たず、DBとDocker Desktopも他作業と共有する。したがってT34の数値との差をフレームワーク性能回帰と判定しない。この1環境・各1回・低VU数から容量、p99上限、Rails比較は主張できない。繰り返し測定、DB/worker/OTelを同時に動かす負荷、冷間起動、CPU/IO計測は後続に残る。T40のHTTP/gRPC検証コンテナは停止済み、4イメージと専用DB`kouga_t40_bench`はローカル再確認用に残した。共有PostgreSQLコンテナは停止・変更していない。
+
+## T34時点の監査（比較用・現行判定ではない）
 
 対象は main `0dedae3`（T33統合直後）、Rust 1.94.0、2026-09-26 のローカル検証。ここでの「確認」は記載した範囲だけを指し、「限定」は仕様の一部を未検証、「未達」は初版の完成条件に必要な実証がないことを指す。タスクの監査・計測完了と**初版リリース可否は別**である。現時点の判定は **初版未達**。第6節で要求する「一つの生成アプリ」での全14シナリオと、業務gRPC・所有者認可付きCRUD・旧payload互換更新などが未実証である。仕様を満たした、あるいはRailsより高速という主張はしない。
 
