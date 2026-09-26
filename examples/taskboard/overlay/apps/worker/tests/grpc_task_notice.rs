@@ -12,7 +12,7 @@ use taskboard_rpc::rpc::{CreateTaskRequest, board_client::BoardClient, board_ser
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, metadata::MetadataValue};
 
-fn smtp_sink() -> (u16, thread::JoinHandle<String>) {
+fn smtp_sink() -> (u16, thread::JoinHandle<(String, Vec<String>)>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     listener.set_nonblocking(true).unwrap();
@@ -30,18 +30,31 @@ fn smtp_sink() -> (u16, thread::JoinHandle<String>) {
                 Err(error) => panic!("SMTP accept: {error}"),
             }
         };
+        socket.set_nonblocking(false).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         socket.write_all(b"220 local SMTP\r\n").unwrap();
         let mut reader = BufReader::new(socket.try_clone().unwrap());
         let mut body = String::new();
+        let mut transcript = Vec::new();
         let mut data = false;
         loop {
             let mut line = String::new();
-            if reader.read_line(&mut line).unwrap() == 0 {
-                break;
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    break;
+                }
+                Err(error) => panic!("SMTP read: {error}"),
             }
+            transcript.push(line.clone());
             if data {
                 if line == ".\r\n" {
                     socket.write_all(b"250 accepted\r\n").unwrap();
@@ -57,7 +70,7 @@ fn smtp_sink() -> (u16, thread::JoinHandle<String>) {
                 socket.write_all(b"354 go\r\n").unwrap();
             }
         }
-        body
+        (body, transcript)
     });
     (port, handle)
 }
@@ -153,7 +166,17 @@ async fn grpc_create_task_enqueues_once_and_worker_delivers() {
     .await
     .unwrap();
     assert_eq!(effect_count, 1);
-    assert!(smtp.join().unwrap().contains("gRPC notification"));
+    let status: String = sqlx::query_scalar("SELECT status FROM kouga_jobs WHERE id=$1")
+        .bind(job_id)
+        .fetch_one(db)
+        .await
+        .unwrap();
+    let (mail, transcript) = smtp.join().unwrap();
+    assert_eq!(status, "succeeded", "SMTP transcript: {transcript:?}");
+    assert!(
+        mail.contains("gRPC notification"),
+        "SMTP transcript: {transcript:?}"
+    );
 
     stop.send(()).unwrap();
     handle.await.unwrap().unwrap();
