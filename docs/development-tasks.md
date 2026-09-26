@@ -725,7 +725,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T30 — 補助CLI・機能追加generator
 
-- 状態: 作業中
+- 状態: レビュー待ち
 - 担当者: Codex
 - ブランチ: `task/T30-cli-features`
 - worktree: `.worktrees/T30-cli-features`
@@ -737,12 +737,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 各コマンドの正常/異常終了を確認し、生成された各機能をビルドして動作させる。
-- [ ] 編集済み箇所の保護・差分提示、後付けworkerへの設定継承、秘密情報の非表示を検証する。
+- [x] 各コマンドの正常/異常終了を確認し、生成された各機能をビルドして動作させる。
+- [x] 編集済み箇所の保護・差分提示、後付けworkerへの設定継承、秘密情報の非表示を検証する。
 
 **今回含めないこと**: Rust REPL、内蔵cron、デプロイCLI。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga jobs list/show/retry/cancel/enqueue`、`maintenance`、`console`、`runner`、`worker`とmiddleware/mailer/job/channel生成、`add otel`を追加。生成アプリの全targetをOTel追加後も型チェックし、実PostgreSQLでqueue migration・投入→worker完了・cancel・retry・期限切れcacheだけの清掃、channel起動と未認証401を確認。生成auth-mail-workerのPostgreSQL＋ローカルSMTP、生成mailerのMemoryMailer配送、runner・middleware登録も確認。編集済みserverの拒否、差分提示、新規ファイル衝突拒否、OTel先行後のjob/auth worker継承、`console`接続情報の復号と秘匿を回帰テスト化。Rust 1.94 `fmt --check`、workspace `clippy -D warnings`、workspace testは成功。生成job handlerは動作例なので業務処理へ置換が必要。ストレージ実体の清掃はアプリ側の`Storage::cleanup`をrunner等から実行する。HTTP/gRPC同居アプリでの`add otel`は`apps/http`と既存workerのみ自動変更し、gRPCバイナリのOTel初期化は手動統合とする。誤削除・独自起動コードの上書きを避けるための制約。
 
 ### T31 — 役割別Dockerイメージ
 

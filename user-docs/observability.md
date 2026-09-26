@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。任意のOTLP送信と処理間trace接続は実装済みです。`kouga add otel`コマンドは未実装で、各バイナリへの組み込みが必要です。
+> 開発プレビュー。任意のOTLP送信と処理間trace接続、`kouga add otel`による標準HTTP/workerへの導入はローカルcheckoutで利用できます。編集済みserverやgRPC独自バイナリは手動統合が必要です。
 
 最初は標準出力のログで十分です。サービスが増えて「このリクエストから、どのジョブが動いたのか」「どこで時間がかかったのか」を知りたくなったら、OpenTelemetryを追加できます。
 
@@ -28,13 +28,13 @@ Kougaでは`tracing`のログを、標準の構造化ログへ載せる設計で
 
 ## OTelを追加する
 
-導入コマンドの案です。
+標準の生成アプリでは次のコマンドを実行します。
 
 ```sh
 kouga add otel
 ```
 
-HTTPと既存workerに、OTelの依存と起動時の設定を追加します。編集済みコードを自動変更できない箇所は、必要な差分を表示します。OTelを使わないアプリには、SDKや送信処理を含めません。
+HTTPと既存workerに、OTelの依存と起動時の設定・終了時flushを追加します。HTTP/gRPC同居アプリでは`apps/http`と既存workerを変更し、gRPCバイナリは変更しません。編集済みserverを安全に更新できない場合は変更案を表示して停止し、ファイルを上書きしません。後から生成したjob/auth workerにも引き継ぎます。OTelを使わないアプリには、SDKや送信処理を含めません。gRPCバイナリの起動時初期化は手動で行います。
 
 続いて、HTTPのサービス名と、CollectorなどのOTLP受信先を指定します。下記はローカルで受信先が起動している場合の例です。
 
@@ -46,7 +46,7 @@ kouga server
 
 OTLP/HTTP protobufで送ります。endpoint未設定なら外部送信しません。endpointを設定すると、標準ではtracesとmetricsを送ります。Collectorは別途用意し、コンテナから送る場合はコンテナから到達できるアドレスを指定します。
 
-CLIによる追加ができるまでは、起動バイナリに`kouga-telemetry`を依存追加し、通常の`kouga_runtime::logging::init`の代わりに次を呼びます。両方を呼ぶと二重初期化エラーになります。
+独自バイナリへ手動で追加する場合は、`kouga-telemetry`を依存追加し、通常の`kouga_runtime::logging::init`の代わりに次を呼びます。両方を呼ぶと二重初期化エラーになります。
 
 ```rust
 let telemetry = kouga_telemetry::Telemetry::init(

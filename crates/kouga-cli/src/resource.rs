@@ -8,7 +8,7 @@ struct Field {
     default: Option<bool>,
 }
 
-fn snake(name: &str) -> Option<String> {
+pub(super) fn snake(name: &str) -> Option<String> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()) {
         return None;
     }
@@ -26,7 +26,7 @@ fn snake(name: &str) -> Option<String> {
     Some(out)
 }
 
-fn identifier(name: &str) -> bool {
+pub(super) fn identifier(name: &str) -> bool {
     !name.is_empty()
         && name.as_bytes()[0].is_ascii_lowercase()
         && name
@@ -159,6 +159,10 @@ pub fn generate(command: GenerateCommand) -> Result<(), Box<dyn Error>> {
             println!("Created {}", path.display());
             Ok(())
         }
+        GenerateCommand::Middleware { name } => super::features::middleware(&name),
+        GenerateCommand::Mailer { name } => super::features::mailer(&name),
+        GenerateCommand::Job { name, fields } => super::features::job(&name, &fields),
+        GenerateCommand::Channel { name } => super::features::channel(&name),
     }
 }
 
@@ -452,10 +456,19 @@ fn request_manifest(old: &str) -> Result<String, io::Error> {
 }
 
 fn app_server(old: &str) -> Result<String, io::Error> {
-    if old != include_str!("../templates/server.rs.txt").replace("APP_CRATE", &app_crate()?) {
-        return Err(invalid("server.rs was edited; register DB state manually"));
+    let app = app_crate()?;
+    let plain = include_str!("../templates/server.rs.txt").replace("APP_CRATE", &app);
+    let database = include_str!("../templates/server-db.rs.txt").replace("APP_CRATE", &app);
+    if old == plain {
+        return Ok(database);
     }
-    Ok(include_str!("../templates/server-db.rs.txt").replace("APP_CRATE", &app_crate()?))
+    if old.contains("// kouga: otel begin") {
+        let service = format!("{}-http", super::otel::service_name()?);
+        if old == super::otel::instrument(&plain, &service, true)? {
+            return super::otel::instrument(&database, &service, true);
+        }
+    }
+    Err(invalid("server.rs was edited; register DB state manually"))
 }
 
 fn app_crate() -> Result<String, io::Error> {
@@ -475,10 +488,20 @@ fn app_lib(old: &str, plural: &str, first: bool, resource: bool) -> Result<Strin
         let standard = include_str!("../templates/lib.rs.txt");
         let without_greeting = super::api::without_greeting(old);
         let original = without_greeting.as_deref().unwrap_or(old);
-        if original != standard && original != format!("pub mod requests;\n{standard}") {
+        let prefix = original
+            .strip_suffix(standard)
+            .ok_or_else(|| invalid("lib.rs was edited; register resource manually"))?;
+        if !prefix.lines().all(|line| {
+            matches!(
+                line,
+                "pub mod requests;" | "pub mod mailers;" | "pub mod jobs;" | "pub mod middlewares;"
+            )
+        }) {
             return Err(invalid("lib.rs was edited; register resource manually"));
         }
         let mut text = include_str!("../templates/lib-db.rs.txt").to_owned();
+        let prefix = prefix.replace("pub mod requests;\n", "");
+        text = format!("{prefix}{text}");
         if resource {
             text = text.replace("// kouga: resource routes\n", &format!("let router = controllers::{plural}::routes(router);\n    // kouga: resource routes\n"));
         }

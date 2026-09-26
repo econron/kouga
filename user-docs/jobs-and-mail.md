@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。`#[kouga_job::job]`による宣言、`kouga_queue::Enqueue`によるDB投入、`kouga-mailer`のメールAPIは実装済みです。generator、handlerの登録、ワンショットのオプションは設計案です。
+> 開発プレビュー。ジョブ契約・queue・worker、生成コマンドと`--once`はローカルcheckoutで動作します。生成handlerは処理例なので、実業務の処理に置き換えてください。
 
 リクエスト内で完了する必要のないメール送信や集計は、ジョブとして登録します。HTTPは応答を返し、workerが後から処理します。
 
@@ -12,12 +12,12 @@
 kouga generate job SendWelcomeEmail user_id:uuid
 ```
 
-最初のジョブを作るときに、workerのパッケージとビルド対象も用意します。
+最初のジョブを作るときに、別のworkerバイナリとqueue migrationも用意します。
 
 ```text
-crates/contracts/src/jobs/send_welcome_email.rs  ジョブ名と引数
-apps/worker/src/jobs/send_welcome_email.rs       実行する処理
-apps/worker/src/main.rs                         handlerの登録
+src/jobs/send_welcome_email.rs       ジョブ名と引数
+src/bin/job-worker.rs               handlerの登録と実行入口
+migrations/*_create_kouga_jobs.up.sql queueと失敗履歴
 ```
 
 HTTPとworkerで共有するのは、ジョブの契約です。
@@ -41,7 +41,7 @@ SendWelcomeEmail { user_id: user.id }
 
 登録が成功すると、ジョブはPostgreSQLに保存されています。HTTPプロセスが終了しても、登録済みのジョブはworkerが取得できます。
 
-利用前に`crates/kouga-queue/migrations/20260925000020_create_kouga_jobs.up.sql`をアプリのmigrationへ追加して適用します。現段階ではgeneratorによる自動追加は未実装です。
+生成後に`kouga db migrate`を実行します。既にqueue migrationがある場合、同じテーブルを二重作成しません。
 
 ## 保存と投入を一緒に確定する
 
@@ -113,7 +113,7 @@ pub async fn send_welcome_email(
 worker.register::<SendWelcomeEmail>(send_welcome_email)?;
 ```
 
-通常はgeneratorが登録箇所を用意します。WorkerStateには、このworkerが使うDBやmailerだけを持たせます。HTTP側はこのhandlerにも、SMTPライブラリにも依存しません。投入側は`kouga_queue::Enqueue`をimportして`enqueue`を使います。
+generatorは`src/bin/job-worker.rs`へ登録例を追加します。生成直後のhandlerは完了を記録する最小例なので、投入前に業務処理と失敗時の`JobError`へ置き換えてください。HTTP側の投入は`kouga_queue::Enqueue`をimportして`enqueue`を使います。`kouga generate mailer Welcome`の本文構築例は`src/mailers/welcome.rs`に置かれます。SMTP資格情報はworker実行環境だけへ渡してください。
 
 ## 常駐して処理する
 
@@ -126,10 +126,10 @@ queueを監視し、新しいジョブを処理し続けます。メールと画
 ## ワンショットタスクとして処理する
 
 ```sh
-kouga worker --queue mail --once --max-jobs 100 --max-duration 60s
+kouga worker --queue mail --once
 ```
 
-この案では、最大100件・最大60秒・queueが空になる、のいずれかで新規取得を止め、終了します。`--once`はプロセスを一度起動して終了するという意味で、必ず1件だけ処理する指定ではありません。
+現行の生成workerは最大1件・30秒で新規取得を止め、終了します。件数や時間を変える場合は、生成されたworkerの`run_once(max_jobs, max_duration, ...)`を編集します。
 
 取得停止後の処理には終了猶予時間を設けます。実行中のジョブを無制限に待つことはせず、完了できなかった分はleaseと再試行の規則に従います。
 
@@ -143,7 +143,7 @@ kouga jobs show <job-id>
 kouga jobs retry <job-id>
 ```
 
-workerは失敗したジョブを間隔を空けて再試行し、上限に達したものをdead状態にします。失敗内容を確認してから再投入できます。
+workerは失敗したジョブを間隔を空けて再試行し、上限に達したものをdead状態にします。`jobs show`は機密情報を避けてpayload・失敗理由を表示しません。失敗理由はworkerの安全なログで確認してから再投入してください。`retry`はdead/quarantined、`cancel`はpendingだけを変更します。
 
 ジョブは少なくとも一度の実行を目指す仕組みです。同じジョブが再実行されることがあるため、課金や残高更新はjob ID・一意制約などで重複に備えます。SMTP送信後に応答が失われた場合など、メールの重複送信も起こり得ます。
 
