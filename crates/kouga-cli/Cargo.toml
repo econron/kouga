@@ -13,3 +13,10 @@ path = "src/main.rs"
 clap = { version = "=4.6.7", features = ["derive"] }
 kouga-migration = { path = "../kouga-migration" }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock"] }
+kouga-db = { path = "../kouga-db" }
+percent-encoding = "=2.3.2"
+serde_json.workspace = true
+sqlx = { version = "=0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "uuid", "json"] }
+tokio = { version = "=1.53.1", features = ["rt-multi-thread"] }
+url = "=2.5.8"
+uuid = { version = "=1.26.1", features = ["v4"] }

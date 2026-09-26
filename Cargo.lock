@@ -1521,7 +1521,14 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "kouga-db",
  "kouga-migration",
+ "percent-encoding",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "url",
+ "uuid",
 ]
 
 [[package]]

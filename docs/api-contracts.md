@@ -73,6 +73,10 @@ T15時点のCLIは`kouga new <name> [--path <destination>]`、`kouga server [--a
 
 T16で`kouga generate resource <PascalCase> field:type...`を追加。例は`Task title:string completed:bool=false`。初版のfield型は`string`、`bool`、`integer`/`int`、`bigint`で、既定値はbooleanだけ。生成先は単一crateの`src/models`・`src/requests`・`src/controllers`、`migrations`、`tests`。Resourceはmodel・SQL up/down・作成/更新Request・公開出力・5つのHTTP action・登録・隔離DBテストをまとめる。`generate model`はmodel/SQL、`generate request`はRequest型、`generate migration`はSQLひな形を生成する。`kouga db create|migrate|status`は生成アプリのDBバイナリを起動する。Resourceの登録時に未編集の標準`lib.rs`/`server.rs`だけDB対応へ切り替え、追加は登録マーカーへ挿入する。既存生成ファイルがあれば全体の書き込み前に拒否し、編集済み標準ファイルも上書きしない。個別Requestは専用モジュールへ自動登録する。
 
+T30の補助CLIは`jobs list [--limit N]`、`show|retry|cancel <UUID>`、`enqueue <name> [--queue Q] [--version V]`、`maintenance`、`console`、`runner <task>`、`worker [--queue default|mail] [--once]`。`jobs enqueue`は業務payloadを標準入力の1 MiB以下のJSON objectから読み、コマンド引数・一覧・詳細に表示しない。未登録のjob名はworkerが隔離するため、運用者は生成済み契約の名前・版・queueを指定する。`retry`はdead/quarantined、`cancel`はpendingだけ成功する。`maintenance`は期限切れcache/token/reset/channel ticketを清掃し、ストレージ実体は誤削除を避けるためアプリ固有の`Storage::cleanup`をrunner等から呼ぶ。`console`はURLを引数に渡さず、復号済み接続情報を子`psql`のPG*環境変数へ渡す。`runner`は登録済み`src/bin/task-<snake_case>.rs`を起動する。
+
+T30の`generate middleware|mailer|job|channel`は新規ファイルの衝突を事前確認し、変更予定の差分を表示する。middlewareは`src/middlewares`へ生成し、router登録の式を表示する。job契約は`src/jobs`、処理入口は別binの`job-worker`、queueとfailure migrationも生成する。mailerは`src/mailers`、channelは認証生成後に別bin`channel-<name>`とticket migrationを生成する。`add otel`は標準HTTP serverと既存workerに`kouga-telemetry`初期化・終了時flushと各crateの`otel` featureを追加する。編集済みserverを安全に更新できない場合は変更案を表示して書き込まない。後から生成するjob/auth workerにも設定を引き継ぐ。gRPC binのOTel起動処理は自動編集せず、手動統合する。
+
 初版の複数形は末尾`s`なら`es`、それ以外は`s`を付けるだけで、不規則変化は扱わない。複雑なschemaは通常のRust/SQLとして生成後に編集する。
 | kouga-test | T17 | HTTP/DB検証支援。http、migration |
 | kouga-auth | T18 | token照合・password・policy。db、runtime。HTTP専用関数はhttp側 |

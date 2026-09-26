@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。ローカルcheckoutからビルドしたCLIでは、アプリ作成、HTTP/gRPC入口追加、起動、route/OpenAPI、Resource・DBの基本コマンドを利用できます。rollback以降の一部コマンドは設計案で、まだ実行できません。
+> 開発プレビュー。以下はローカルcheckoutからビルドしたCLIで利用できます。DB管理のrollback以降、配布済みバイナリ、Docker配備は後続タスクです。
 
 ## よく使うコマンド
 
@@ -25,13 +25,22 @@
 | 認証を追加 | `kouga generate auth` |
 | ジョブを追加 | `kouga generate job SendWelcomeEmail user_id:uuid` |
 | メールを追加 | `kouga generate mailer Welcome` |
+| middlewareを追加 | `kouga generate middleware Audit` |
+| WebSocket入口を追加 | `kouga generate channel Events`（認証生成後） |
 | 常駐workerを起動 | `kouga worker --queue mail` |
-| ワンショットで処理 | `kouga worker --queue mail --once --max-jobs 100 --max-duration 60s` |
+| ワンショットで1件処理 | `kouga worker --queue mail --once` |
+| ジョブを一覧・詳細確認 | `kouga jobs list` / `kouga jobs show <UUID>` |
+| ジョブを再試行・中止 | `kouga jobs retry <UUID>` / `kouga jobs cancel <UUID>` |
+| ジョブを管理者投入 | `printf '%s' '{"user_id":"..."}' \| kouga jobs enqueue send_welcome` |
+| 期限切れ行を清掃 | `kouga maintenance` |
+| DBのSQLコンソール | `kouga console`（`psql`が必要） |
 | 登録済み処理を実行 | `kouga runner <task>` |
 | OpenAPIを生成 | `kouga openapi generate` |
 | OpenAPIの更新漏れを確認 | `kouga openapi check` |
 | OpenTelemetryを追加 | `kouga add otel` |
 | テスト | `cargo test` |
+
+`runner <task>`は`src/bin/task-<task>.rs`を実行します。`jobs enqueue`のpayloadは標準入力から読み、引数や一覧・詳細へ表示しません。未登録のジョブ名はworkerで隔離されるため、生成済みの契約名を指定してください。`maintenance`はDBの期限切れcache・token等を清掃します。ストレージ実体は設定済み`Storage::cleanup`をアプリのrunnerから呼びます。生成channelの認可は初期状態ですべて拒否するため、購読を有効にする前に業務用policyを記述してください。
 
 ## どこを編集する？
 
@@ -42,9 +51,9 @@
 | HTTPの処理・出力 | `apps/http/src/controllers/` |
 | DB操作・業務ルール | `crates/domain/src/models/` |
 | DB構造 | `migrations/` |
-| ジョブ名・引数 | `crates/contracts/src/jobs/` |
-| ジョブの実行処理 | `apps/worker/src/jobs/` |
-| メール本文・送信処理 | `apps/worker/src/mailers/` |
+| ジョブ名・引数 | `src/jobs/` |
+| ジョブの実行処理・登録 | `src/bin/job-worker.rs` |
+| メール本文の組み立て | `src/mailers/` |
 
 生成直後にすべてのディレクトリが必要なわけではありません。worker用のファイルは、その機能を追加したときに作ります。
 

@@ -7,6 +7,9 @@ use std::process::{Command, ExitCode};
 
 mod api;
 mod auth;
+mod features;
+mod operations;
+mod otel;
 mod resource;
 
 #[derive(Parser)]
@@ -51,6 +54,24 @@ enum Commands {
         #[command(subcommand)]
         command: DbCommand,
     },
+    /// Inspect and manage queued jobs.
+    Jobs {
+        #[command(subcommand)]
+        command: JobsCommand,
+    },
+    /// Delete expired cache and authentication records.
+    Maintenance,
+    /// Open psql using DATABASE_URL without exposing it in process arguments.
+    Console,
+    /// Run a registered src/bin/task-<name>.rs binary.
+    Runner { task: String },
+    /// Run a generated worker binary.
+    Worker {
+        #[arg(long)]
+        queue: Option<String>,
+        #[arg(long)]
+        once: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -60,6 +81,35 @@ enum GenerateCommand {
     Model { name: String, fields: Vec<String> },
     Request { name: String, fields: Vec<String> },
     Migration { name: String },
+    Middleware { name: String },
+    Mailer { name: String },
+    Job { name: String, fields: Vec<String> },
+    Channel { name: String },
+}
+
+#[derive(Subcommand)]
+enum JobsCommand {
+    List {
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+    },
+    Show {
+        id: String,
+    },
+    Retry {
+        id: String,
+    },
+    Cancel {
+        id: String,
+    },
+    /// Read a JSON object from stdin; never pass payload/secrets in shell arguments.
+    Enqueue {
+        name: String,
+        #[arg(long, default_value = "default")]
+        queue: String,
+        #[arg(long, default_value_t = 1)]
+        version: i32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -114,7 +164,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             }
             api::run_server(&api)?;
         }
-        Commands::Add { api } => api::add(&api)?,
+        Commands::Add { api } => match api.as_str() {
+            "otel" => operations::add_otel()?,
+            _ => api::add(&api)?,
+        },
         Commands::Routes => run_app("routes")?,
         Commands::Openapi { command } => openapi(command)?,
         Commands::Generate { command } => resource::generate(command)?,
@@ -126,6 +179,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 DbCommand::Status => "db-status",
             })?;
         }
+        Commands::Jobs { command } => operations::jobs(command)?,
+        Commands::Maintenance => operations::maintenance()?,
+        Commands::Console => operations::console()?,
+        Commands::Runner { task } => operations::runner(&task)?,
+        Commands::Worker { queue, once } => operations::worker(queue.as_deref(), once)?,
     }
     Ok(())
 }
