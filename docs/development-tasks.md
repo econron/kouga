@@ -74,7 +74,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T32 | 配備先への実行対応 | T31、T27 | 統合済み |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 統合済み |
 | T34 | 初版の横断検証・計測 | T33 | 統合済み（初版未達） |
-| T35 | 認可付き業務サンプル基盤 | T34 | 未着手 |
+| T35 | 認可付き業務サンプル基盤 | T34 | 作業中 |
 | T36 | queue再起動・旧payload互換 | T35 | 未着手 |
 | T37 | 添付・WebSocket業務連携 | T35 | 未着手 |
 | T38 | 共通業務処理へのgRPC入口 | T35 | 未着手 |
@@ -868,9 +868,9 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T35 — 認可付き業務サンプル基盤
 
-- 状態: 未着手
+- 状態: 作業中
 - ブランチ: `task/T35-business-sample`
-- worktree: `.worktrees/T35-business-sample`（作成前）
+- worktree: `.worktrees/T35-business-sample`
 - 依存: T34
 - 対応仕様: 4.3、4.4、4.6、4.11、第6節2〜4
 
