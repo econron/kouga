@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T18・T20〜T29統合済み。T19は作業中
+状態: T00〜T29統合済み。T30は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -58,7 +58,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 完了 |
 | T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 完了 |
-| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 完了（レビュー待ち） |
+| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 完了 |
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
@@ -69,7 +69,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
-| T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
+| T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 作業中 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
 | T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 未着手 |
@@ -494,7 +494,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T19 — 認証API・リセット・auth生成
 
-- 状態: 完了（レビュー待ち）
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T19-auth-api`
 - worktree: `.worktrees/T19-auth-api`
@@ -725,10 +725,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T30 — 補助CLI・機能追加generator
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: Codex
 - ブランチ: `task/T30-cli-features`
-- worktree: `.worktrees/T30-cli-features`（作成前）
+- worktree: `.worktrees/T30-cli-features`
 - 依存: T06、T19、T21、T22、T24、T25、T26、T29
 - 対応仕様: 4.17、4.15.1
 - 主担当領域: CLIの残項目・機能別テンプレート
