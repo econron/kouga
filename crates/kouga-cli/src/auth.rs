@@ -80,11 +80,15 @@ pub fn generate() -> Result<(), Box<dyn Error>> {
     )?;
     super::worker_package::add_auth_mail()?;
     let worker_dir = super::worker_package::dir();
-    let worker = format!(
-        "{}\n{}",
-        include_str!("../templates/auth-mail-worker.rs.txt").replace("APP_CRATE", "app_contracts"),
-        include_str!("../templates/shutdown.rs.txt")
-    );
+    let worker = include_str!("../templates/auth-mail-worker.rs.txt")
+        .replace("APP_CRATE", "app_contracts")
+        .replace(
+            "#[cfg(test)]",
+            &format!(
+                "{}\n#[cfg(test)]",
+                include_str!("../templates/shutdown.rs.txt")
+            ),
+        );
     let worker = if fs::read_to_string("Cargo.toml")?.contains("kouga-telemetry =") {
         super::otel::worker_code(&worker, &super::otel::service_name()?)?
     } else {

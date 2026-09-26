@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> 入口追加CLIとunaryのgRPCサンプルは利用できます。以下のDocker targetや、認証・DB・ジョブを両入口へ自動生成する構成は後続タスクの設計案です。
+> 入口追加CLI、unaryのGreetingサンプル、役割別Docker targetは利用できます。認証・DB・ジョブをgRPC handlerへ自動配線する機能はありません。業務RPCは手動で実装します。
 
 フロントエンドにはHTTP/JSON、別のサービスにはgRPC/Protobuf。同じ業務処理を、使う側に合った入口から提供できます。
 
@@ -16,7 +16,7 @@ cd taskboard
 kouga add grpc
 ```
 
-標準はHTTPです。gRPCを追加すると、既存のHTTPルートを残したまま、`proto/greeting.proto`、`crates/domain`、`crates/rpc`、`apps/grpc`を生成します。`/greet/{name}`と`Greeting.Greet`は同じ`app_domain::greet`を呼びます。`protoc`はビルド時に必要です。Dockerの`grpc` targetは後続タスクで追加します。
+標準はHTTPです。gRPCを追加すると、既存のHTTPルートを残したまま、`proto/greeting.proto`、`crates/domain`、`crates/rpc`、`apps/grpc`を生成します。`/greet/{name}`と`Greeting.Greet`は同じ`app_domain::greet`を呼びます。`protoc`はビルド時に必要です。Dockerfileは`kouga dockerfile`で生成します。
 
 ```sh
 cargo build -p taskboard-grpc --bin server-grpc
@@ -65,11 +65,12 @@ HTTPはRustのRequest・出力型からOpenAPIを生成し、gRPCは`.proto`を�
 
 ## 同居しても、配備は別々に
 
-Docker targetはT31で追加予定です。現時点では入口ごとのCargoパッケージを個別にビルドできます。
+入口ごとのCargoパッケージとDocker targetを個別にビルドできます。Dockerビルドには、生成元のKouga checkoutをBuildKit named contextで渡します。
 
 ```sh
-docker build --target http -t taskboard-http .
-docker build --target grpc -t taskboard-grpc .
+kouga dockerfile
+docker build --build-context kouga=/path/to/kouga --target http -t taskboard-http .
+docker build --build-context kouga=/path/to/kouga --target grpc -t taskboard-grpc .
 ```
 
 同じリポジトリの共通コードから作った、別の実行ファイル・別のイメージです。HTTPだけ台数を増やしたり、gRPCを内部ネットワークへ配置したりできます。

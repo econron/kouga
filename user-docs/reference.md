@@ -22,17 +22,17 @@
 | 開発DBを作成 | `kouga db create` |
 | migrationを適用 | `kouga db migrate` |
 | 適用状況を確認 | `kouga db status` |
-| 直前の変更を戻す | `kouga db rollback --steps 1` |
 | 認証を追加 | `kouga generate auth` |
 | ジョブを追加 | `kouga generate job SendWelcomeEmail user_id:uuid` |
 | メールを追加 | `kouga generate mailer Welcome` |
 | middlewareを追加 | `kouga generate middleware Audit` |
 | WebSocket入口を追加 | `kouga generate channel Events`（認証生成後） |
-| 常駐workerを起動 | `kouga worker --queue mail` |
-| ワンショットで1件処理 | `kouga worker --queue mail --once` |
+| 生成した通常ジョブworkerを起動 | `kouga worker --queue default` |
+| ワンショットで1件処理 | `kouga worker --queue default --once` |
+| 認証メールworkerを起動 | `kouga worker --queue mail --once`（認証生成後） |
 | ジョブを一覧・詳細確認 | `kouga jobs list` / `kouga jobs show <UUID>` |
 | ジョブを再試行・中止 | `kouga jobs retry <UUID>` / `kouga jobs cancel <UUID>` |
-| ジョブを管理者投入 | `printf '%s' '{"user_id":"..."}' \| kouga jobs enqueue send_welcome` |
+| ジョブを管理者投入 | `printf '%s' '{"user_id":"..."}'`を`kouga jobs enqueue send_welcome`へpipe |
 | 期限切れ行を清掃 | `kouga maintenance` |
 | DBのSQLコンソール | `kouga console`（`psql`が必要） |
 | 登録済み処理を実行 | `kouga runner <task>` |
@@ -106,10 +106,10 @@ HTTP入力のルールはRequestへ書きます。workerからも守る業務条
 
 ## キャッシュ、アップロード、WebSocketは？
 
-いずれも初版の計画に含みます。キャッシュはTTL付き、アップロードは非公開を標準とし、WebSocketは購読時にも認可します。これらの利用者向けAPIと詳しいガイドは、今回の叩き台ではまだ定義していません。
+キャッシュは`kouga-cache`、添付は`kouga-storage`、WebSocketは`kouga-channel`の低レベルAPIが実装済みです。添付用のCLI generatorとHTTP controllerはありません。channel generatorは拒否を既定にした別バイナリを作ります。購読・配信policyを記述するまでは通知できません。詳しくは[ストレージ](storage.md)と[WebSocket](websocket.md)を参照してください。
 
 ## もう使える？
 
-まだ使えません。この文書から使い心地を検討している段階です。インストール先、安定版、性能・サイズの実測値は、実装と検証の後に案内します。
+ローカルcheckoutからCLIをビルドして使えます。ただしcrate配布と安定版はなく、生成アプリはcheckoutへの絶対path依存を持ちます。性能や実クラウドでの動作保証はまだありません。[通しの実行手順](tutorial.md)から始めてください。
 
 **[最初のAPIへ戻る](getting-started.md)** · **[設計案の確認ポイント](preview.md)**

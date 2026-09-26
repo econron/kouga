@@ -4,6 +4,8 @@
 
 > 低レベルの`kouga-storage` APIは実装済みです。添付用のCLI generatorやcontrollerはまだありません。
 
+[新規生成アプリで保存・関連付け・他人の拒否・取得・削除を試す](tutorial.md#追加テスト関連添付websocket)ためのコンパイル済みテストもあります。以下のHTTP handlerは配線の説明用抜粋で、自動生成されません。
+
 DBへ`crates/kouga-storage/migrations`のSQLを適用し、`Storage::local(db, root)`または`Storage::s3(db, s3_store)`を作ります。ローカルの`root`は事前に作成します。S3の接続先・bucket・資格情報は`object_store::aws::AmazonS3Builder`で設定します。コンテナでは永続ファイルを外部のS3互換ストレージへ置き、ローカル保存は開発用に使います。
 
 HTTPでは`kouga_http::Multipart<T>::next_field()`から受けたfieldを`field.stream()`で`Storage::save`へ渡します。ファイル全体をメモリへ載せずに、個別の上限と許可形式を指定できます。

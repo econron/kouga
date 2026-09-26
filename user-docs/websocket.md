@@ -1,5 +1,9 @@
 # WebSocket通知
 
+[← ガイドの入口](README.md)
+
+`kouga generate channel Events`は、認証追加後に別バイナリを生成します。生成されたpolicyはすべて拒否するため、下記の許可例を業務要件に合わせて実装してください。[新規生成アプリでの実WebSocket結合テスト](tutorial.md#追加テスト関連添付websocket)では、ticket・購読・別インスタンス通知を確認できます。
+
 `kouga-channel`は、オンライン接続へのbest-effort通知です。履歴を保存しません。切断・再接続後は通常のHTTP APIで最新状態を取得してください。長時間接続できないLambda実行モードは対象外です。
 
 認証migrationを適用した後、`crates/kouga-channel/migrations`を適用します。HTTPプロセスごとに同じPostgreSQLへ接続します。

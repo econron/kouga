@@ -2,9 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> 下記の`kouga generate auth`と認証APIは実装済みです。後半の独自リソース例は設計案です。
-
-標準の認証を生成して、保護したいルートへ付けます。独自middlewareを書くのは、追加の振る舞いが必要になってからで構いません。
+`kouga generate auth`は、User model・migration・Request・controller・認証ルート・メール用worker・テストを生成します。Kouga checkoutからビルドしたCLIで利用できます。
 
 ## 認証を追加する
 
@@ -13,9 +11,7 @@ kouga generate auth
 kouga db migrate
 ```
 
-User、トークン保存用のmigration、認証middleware、Request、controller、テストを生成します。メールによるパスワードリセットには、[メール用worker](jobs-and-mail.md)の設定も必要です。
-
-生成時に次のルートを`src/lib.rs`へ登録します。公開範囲を変える場合は、生成後にそこで編集してください。
+生成された`src/auth.rs`は、次のルートを`src/lib.rs`へ登録します。
 
 | 操作 | ルート |
 |---|---|
@@ -23,123 +19,65 @@ User、トークン保存用のmigration、認証middleware、Request、controll
 | ログイン | `POST /auth/login` |
 | ログアウト | `POST /auth/logout` |
 | 現在のユーザー | `GET /auth/me` |
-| パスワードリセット申請 | `POST /auth/password/reset-request` |
+| リセット申請 | `POST /auth/password/reset-request` |
 | パスワードリセット | `POST /auth/password/reset` |
 
-標準はBearerトークンです。ログインで得たトークンを、`Authorization: Bearer <token>`へ付けます。期限切れ・失効済み・未指定は401です。
-生成版のログアウトは、そのユーザーの全セッションを失効させます。
+登録・ログインの成功時は`data.token`と`data.user`を返します。Bearer tokenは`Authorization: Bearer <token>`で送ります。`/auth/me`と`/auth/logout`には認証middlewareが付いています。未指定・期限切れ・失効済みは401、認証DBの障害は503です。ログアウトはそのユーザーの全セッションを失効させます。tokenはレスポンス例やログへ貼らず、秘密情報として扱ってください。
 
-リセット申請は存在するメールアドレスにも存在しないアドレスにも同じ応答を返します。HTTP側は送信ジョブを登録するだけです。別プロセスで`cargo run --bin auth-mail-worker`を起動し、`DATABASE_URL`、`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`を渡してください。SMTP認証が必要なら`KOUGA_SMTP_USER`と`KOUGA_SMTP_PASSWORD`も両方渡します。ローカル試験のメール受信サーバーには、`KOUGA_ENV=test`、`KOUGA_SMTP_HOST=127.0.0.1`、`KOUGA_SMTP_LOCAL=1`とポート番号を使えます。1件だけ処理して終了する場合は`--once`を付けます。平文リセットトークンはメールにのみ載り、DBにはハッシュを保存します。
+[新規生成アプリの通し例](tutorial.md#2-認証とmodel)では登録と実DBテストを確認できます。生成されたTask CRUDは、認証を追加しても公開のままです。
 
-## 保護する範囲を、ルートで決める
+## 自分のルートを保護する
+
+生成された`src/auth.rs`の実際の登録方法は次の形です。
 
 ```rust
-router.group("/tasks")
-    .middleware(bearer_auth(auth::require_user))
-    .resource(tasks::routes());
+let protected = kouga_http::auth::require_bearer(|db: &Db| db);
+router
+    .get("/auth/me", me_endpoint().middleware(protected))
+    .expect("auth route")
 ```
 
-これで、そのグループでは認証がRequest検証より先に実行されます。認証情報はOpenAPIにも反映され、`/docs`でトークンを入力して試せます。
+Taskを保護する場合は`src/controllers/tasks.rs`の`routes`関数を編集し、一覧・作成・詳細・更新・削除のすべてのendpointへ`.middleware(protected.clone())`を付けます。ひとつだけ保護しても、ほかのルートは公開されたままです。認証情報は`Extension<CurrentUser>`でcontrollerへ受け取れます。
 
-公開APIは、このグループの外へ登録します。
+「ログイン済み」と「この行を見てよい」は別です。所有者別の取得・一覧には`kouga_auth::owned_by`等でscopeをかけ、作成時のowner_idはRequestからではなく認証主体から設定します。更新・削除は同一transaction内で所有者scope付きの`for_update`取得を行ってから操作してください。関連queryにも同じ認可条件が必要です。
 
-## 「ログインしている」と「このデータを見てよい」は別
+## 独自middleware
 
-Taskにowner_idとその外部キーを追加した場合の、単件取得の抜粋です。
-
-```rust
-let task = Task::query()
-    .filter(Task::id.eq(task_id))
-    .filter(Task::owner_id.eq(current_user.id))
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(Error::not_found)?;
+```sh
+kouga generate middleware Audit
 ```
 
-認証middlewareが設定した`CurrentUser`をcontrollerの引数で受け取り、そのユーザーの範囲から取得します。この例では、他人のデータも未存在も404にしています。
-
-作成時のowner_idはリクエストに任せず、current_userから設定します。一覧・関連取得・更新・削除にも同じ範囲を適用してください。複数の操作で共有する権限条件はpolicyへまとめられます。
-
-## 独自middlewareは、非同期関数
+これにより`src/middlewares/audit.rs`へ次の最小関数ができます。CLIは`src/lib.rs`へmoduleを追加しますが、ルートへの適用は利用者が明示します。
 
 ```rust
-pub async fn add_api_version(
-    request: HttpRequest<AppState>,
-    next: Next<AppState>,
+use kouga_http::{Error, HttpRequest, Next};
+use axum::response::Response;
+
+pub async fn audit<S: Clone + Send + Sync + 'static>(
+    request: HttpRequest<S>,
+    next: Next<S>,
 ) -> Result<Response, Error> {
-    let mut response = next.run(request).await?;
-    response.headers_mut().insert(
-        "x-api-version",
-        HeaderValue::from_static("1"),
-    );
-    Ok(response)
-}
-```
-
-ルートやグループへ登録します。
-
-```rust
-router.group("/tasks")
-    .middleware(add_api_version)
-    .middleware(bearer_auth(auth::require_user))
-    .resource(tasks::routes());
-```
-
-登録順に入り、戻る処理は逆順です。`next.run(request)`を呼べば次へ進み、呼ばずにエラーやレスポンスを返せばそこで終了します。上例は返ってきたレスポンスにヘッダーを付け、Errは共通のエラー処理へ渡します。入力抽出の拒否など、すでにレスポンスになったエラーもあるため、成功時だけ加工したい場合はstatusも確認します。
-
-## 認証middlewareの中身
-
-標準認証も、考え方は同じです。
-
-```rust
-pub async fn require_user(
-    mut request: HttpRequest<AppState>,
-    next: Next<AppState>,
-) -> Result<Response, Error> {
-    let token = bearer_token(request.headers())?;
-    let user = authenticate(request.state().db(), token).await?;
-    request.extensions_mut().insert(CurrentUser::from(user));
     next.run(request).await
 }
 ```
 
-ヘッダーからトークンを取り、期限と失効を確認し、型付きのユーザー情報をrequestへ格納します。認証失敗は401、認証DBの障害は503です。認証できない原因を混同しません。
+`router.middleware(middlewares::audit::audit)`は、その後に登録するルートへ適用します。個別のendpointなら`endpoint.middleware(...)`を使います。`next.run(request)`を呼ばずにエラーを返せばそこで終了します。middlewareはRequestの検証より前に実行されます。
 
-`HttpRequest`はHTTPそのもの、`CreateTaskRequest`などのRequest型は検証する入力です。自分の認証処理に差し替える場合も、`bearer_auth`で登録すれば実行時の認証とOpenAPIの説明を同じ場所に置けます。
+## メールによるパスワードリセット
+
+リセット申請は、存在するメールアドレスにも存在しないメールアドレスにも同じ応答を返します。HTTP側は送信ジョブを登録し、平文tokenはメールにだけ載せます。DBにはハッシュを保存します。
+
+別プロセスのメールworkerへ`DATABASE_URL`、`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`を渡します。SMTP認証には`KOUGA_SMTP_USER`と`KOUGA_SMTP_PASSWORD`を両方渡してください。
+
+```sh
+kouga worker --queue mail --once
+# または cargo run -p taskboard-worker --bin auth-mail-worker -- --once
+```
+
+開発用のローカルSMTPシンクに限り、`KOUGA_ENV=test`、`KOUGA_SMTP_HOST=127.0.0.1`、`KOUGA_SMTP_LOCAL=1`と`KOUGA_SMTP_PORT`を指定できます。本番ではTLS証明書検証を有効にし、SMTP秘密情報をHTTPコンテナへ渡さないでください。生成されたworkerの実SMTPシンクテストは`TEST_DATABASE_URL`を指定した`cargo test --workspace`で実行されます。
+
+## レート制限
+
+生成された認証ルートはPostgreSQL共有の`kouga-cache` rate limiterを使い、IPとメールアドレス由来のキーに制限をかけます。上限超過は429と`Retry-After`、DB障害時は503で、認証を無条件に通過させません。転送ヘッダーの送信元IPを使う場合は、`HttpOptions::trusted_proxies`へ信頼できる直近プロキシを明示してください。
 
 **次へ：[ジョブとメール](jobs-and-mail.md)**
-
-## 現在使えるmiddleware API（T10）
-
-以下は実装済みの低レベルHTTP APIです。上記の`resource(...)`記法は引き続きプレビューです。
-
-```rust
-let router = Router::<AppState>::new()
-    .configure(HttpOptions {
-        cors_origins: vec!["https://example.com".into()],
-        ..HttpOptions::default()
-    })?
-    .middleware(add_api_version)
-    .group("/tasks")?
-    .middleware(bearer_auth(require_user))
-    .get("/", list_tasks_endpoint())?
-    .finish();
-let app = router.with_state(state);
-```
-
-ルート固有の処理は`Endpoint::middleware(fn)`で登録します。`HttpRequest::extensions_mut()`に入れた値はcontrollerで`Extension<T>`として受け取れます。`ClientIp`は接続元IPです。転送ヘッダーを使う場合は`HttpOptions::trusted_proxies`へ直近のプロキシIPを明示してください。
-
-## 現在使える認証コア（T18）
-
-`kouga-auth`のmigrationをアプリのmigrationへ追加して適用すると、共通の`hash_password`/`verify_password`、`issue_token`/`authenticate`/`revoke_token`を使えます。`kouga generate auth`ならユーザー表、認証・レート制限・queue・リセット用migrationとルートを一括生成します。
-
-```rust,ignore
-use kouga_http::auth::require_bearer;
-
-let router = Router::<AppState>::new()
-    .middleware(require_bearer(|state: &AppState| &state.db));
-```
-
-`require_bearer`は401と認証DB障害の503を区別し、認証主体を`Extension<CurrentUser>`へ入れます。所有者別の取得・一覧には`owned_by(query, owner_column, actor)`を使用できます。更新・削除では同じtransaction内で所有者scope付きの`for_update`取得を行ってから操作してください。
-
-共有レート制限には`kouga_cache::RateLimiter::new(db, "login", 5, Duration::from_secs(60))`を作り、`router.middleware(kouga_cache::rate_limit(limiter, |request| request.extensions().get::<ClientIp>().map(|ip| ip.0.to_string())))`で登録します。`kouga-cache`のSQL migrationを先に適用してください。認証主体で制限する場合は、認証済み主体をextensionに入れるmiddlewareの後に登録します。上限超過は429と`Retry-After`、DB障害は503です。キャッシュの`fetch`はDB障害時に元データを取得しますが、レート制限は通過させません。

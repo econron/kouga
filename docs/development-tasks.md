@@ -70,9 +70,9 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
 | T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 完了 |
-| T31 | 役割別Dockerイメージ | T29、T30 | レビュー待ち |
-| T32 | 配備先への実行対応 | T31、T27 | 未着手 |
-| T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | 未着手 |
+| T31 | 役割別Dockerイメージ | T29、T30 | 統合済み |
+| T32 | 配備先への実行対応 | T31、T27 | 統合済み |
+| T33 | 利用者ガイドと通しのサンプル | T13、T14、T19、T24、T25、T27、T32 | レビュー待ち |
 | T34 | 初版の横断検証・計測 | T33 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
@@ -779,7 +779,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T32 — 配備先への実行対応
 
-- 状態: レビュー待ち
+- 状態: 統合済み
 - 担当者: Codex
 - ブランチ: `task/T32-platform-runtime`
 - worktree: `.worktrees/T32-platform-runtime`
@@ -804,10 +804,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T33 — 利用者ガイドと通しのサンプル
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T33-user-journey`
-- worktree: `.worktrees/T33-user-journey`（作成前）
+- worktree: `.worktrees/T33-user-journey`
 - 依存: T13、T14、T19、T24、T25、T27、T32
 - 対応仕様: 第6節、user-docs全体
 - 主担当領域: 通しのサンプル・利用者文書
@@ -816,12 +816,20 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 新規ディレクトリからCRUD/認証/関連/メール/添付/WebSocket/gRPC/OTel/イメージを再現する。
-- [ ] コード例をコンパイル・実行し、提案から確定したAPIを文書へ反映する。未実装・未検証を提供済みと表現しない。
+- [x] 新規ディレクトリからCRUD/認証/関連/メール/添付/WebSocket/gRPC/OTel/イメージを再現する。
+- [x] コード例をコンパイル・実行し、提案から確定したAPIを文書へ反映する。未実装・未検証を提供済みと表現しない。
 
 **今回含めないこと**: GitHub Pages公開、未検証の性能や導入実績の訴求。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: [通しの実行手順](../user-docs/tutorial.md)と[追加テスト](../user-docs/examples/advanced.rs)を新設。README・機能別ガイド・CLIリファレンスを現行CLI/生成型/ファイル配置へ更新した。`db rollback/repair/schema/seed`、添付HTTP route generator、任意の業務RPC/認可policy/ジョブ送信handlerの自動生成は提供済みと扱わない。生成アプリはCLIをビルドしたKouga checkoutへの絶対path依存であり、配布・実クラウド配備は未検証。
+
+T33 checkoutから新規ディレクトリへ生成したアプリで、実PostgreSQLの`db create/migrate`、CRUDの201/422と生成テスト、認証登録200と認証テスト、通常job投入→`worker --once`→`succeeded`、gRPC実クライアントの`Hello, Kouga!`を確認。`generate auth/model/job/mailer/channel`・`add grpc/otel`を同じアプリへ適用した`cargo check --workspace --offline`と、実DB付き`cargo test --workspace --offline`を通した。生成auth-mail-workerのテストではローカルSMTPシンクへの送信とreset tokenハッシュ保存を確認。追加テストは実DBの外部キー付き`belongs_to`/preload、ローカル添付の保存・attach・他人拒否・取得・削除、認証ticketでのWebSocket購読と別Channelインスタンスからの通知を再現した。OTel付き生成HTTPに独自metricを加えて実DBリクエスト後にSIGTERMで終了し、ローカルmock Collectorで`/v1/traces`・`/v1/metrics`・`/v1/logs`を受信した。
+
+新規生成アプリの`http`/`worker` Docker最終targetをBuildKit named context付きでビルドした。展開サイズは各115,670,588/104,854,508バイト、UID/GID 65532。HTTPはread-only rootでPORT指定の`/health` 200と外部DBの`/tasks` 200、workerもread-only rootの`--once`で実ジョブを完了。検証用コンテナは停止・削除済み。レジストリpushやクラウドdeployは行っていない。
+
+通し検証で見つかった生成コードの不具合を最小修正した。auth-mail-workerテストのmigration pathをworker packageからの絶対基準へ変更し、shutdown関数をtest module前へ置き、`WorkerOptions`初期化をlint適合にした。resource作成時のCopy項目には不要なcloneを付けず、gRPC Greetingが最後のルートの場合に余分な`let router`を生成しない。`kouga-cli/tests/t33.rs`はHTTP→auth→gRPCとHTTP→gRPC→resourceの両順序を確認し、新規生成アプリの`clippy --workspace --all-targets -D warnings`も通った。既存の編集済みアプリは自動書換えしない。
+
+Rust 1.94のKouga workspace `fmt --check`・`clippy --workspace --all-targets --locked --offline -- -D warnings`・`test --workspace --locked --offline -- --test-threads=1`は最終実行で通過。全体テストの初回だけ既存OTel flushテストが1回失敗したが、同テスト単独で計4回連続成功し、全体テスト再実行も成功した。telemetry本体は変更していない。今回の添付はローカル保存を検証し、S3結合は既存T24テストの範囲。業務アプリごとの関連付け・添付route・WebSocket policy・独自メールhandler、実Cloud Run/ECS/Lambda、性能・全機能横断判定はT34以降/利用アプリ側の責務として残す。
 
 ### T34 — 初版の横断検証・計測
 

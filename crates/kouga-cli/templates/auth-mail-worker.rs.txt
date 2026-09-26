@@ -72,8 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         from: std::env::var("KOUGA_MAIL_FROM")?,
         reset_url: std::env::var("KOUGA_RESET_URL")?,
     });
-    let mut options = WorkerOptions::default();
-    options.queues = vec!["mail".into()];
+    let options = WorkerOptions { queues: vec!["mail".into()], ..WorkerOptions::default() };
     let mut worker = Worker::new(db, state, options)?;
     worker.register::<SendPasswordReset>(send)?;
     let cancellation = tokio_util::sync::CancellationToken::new();
@@ -100,7 +99,8 @@ mod tests {
         if std::env::var("TEST_DATABASE_URL").is_err() {
             return;
         }
-        let isolated = TestDb::from_env("migrations").await.unwrap();
+        let isolated = TestDb::from_env(concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations"))
+            .await.unwrap();
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO users(id,email,password_hash) VALUES ($1,'receiver@example.test','unused')")
             .bind(id).execute(isolated.db()).await.unwrap();

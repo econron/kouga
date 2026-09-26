@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> 開発プレビュー。ジョブ契約・queue・worker、生成コマンドと`--once`はローカルcheckoutで動作します。生成handlerは処理例なので、実業務の処理に置き換えてください。
+> ジョブ契約・queue・worker、生成コマンドと`--once`はローカルcheckoutで動作します。生成handlerはjob IDを表示して完了する最小例で、メール送信には利用者がhandlerを編集します。
 
 リクエスト内で完了する必要のないメール送信や集計は、ジョブとして登録します。HTTPは応答を返し、workerが後から処理します。
 
@@ -23,13 +23,13 @@ migrations/*_create_kouga_jobs.up.sql queueと失敗履歴
 HTTPとworkerで共有するのは`crates/contracts` packageのジョブ契約です。worker packageはHTTP routerやOpenAPI UIに依存しません。
 
 ```rust
-#[kouga_job::job(name = "send_welcome_email", version = 1, queue = "mail")]
+#[kouga_job::job(name = "send_welcome_email", version = 1, queue = "default")]
 pub struct SendWelcomeEmail {
     pub user_id: Uuid,
 }
 ```
 
-ここにSMTPやメール本文は入れません。
+生成直後のqueueは`default`です。mail専用queueへ変える場合は、この契約の`queue`とworkerの`WorkerOptions::queues`を揃えて編集してください。ここにSMTPやメール本文は入れません。
 
 ## HTTPから投入する
 
@@ -70,9 +70,9 @@ tx.commit().await?;
 kouga generate mailer Welcome
 ```
 
-worker側に、mailerとテキスト・HTMLのテンプレートを生成します。SMTP接続先や認証情報はworkerの実行環境へ設定します。開発・テストでは外部送信せず、生成したメールを確認できます。
+worker側に`apps/worker/src/mailers/welcome.rs`の`build(to, from)`関数を生成します。生成直後の本文は固定の最小例です。SMTP接続先や認証情報はworkerの実行環境へ設定します。開発・テストではMemoryMailerで送信内容を確認できます。
 
-現在使えるメールAPIは次の形です。テンプレートの変数は`render_html`でエスケープします。SMTPが必要なのはworkerバイナリだけです。
+次は低レベルメールAPIの使用例です。生成されたjob handlerに自動配線されるコードではありません。テンプレートの変数は`render_html`でエスケープします。SMTPが必要なのはworkerバイナリだけです。
 
 ```rust
 use kouga_mailer::{MailMessage, MemoryMailer, render_html};
@@ -89,23 +89,7 @@ assert_eq!(recorded[0].subject(), "ようこそ");
 
 本番では`SmtpMailer::relay(host, port, credentials)`または`starttls`を使い、TLS・証明書検証を必須にします。`insecure_local(port)`はローカルの開発用SMTPシンク専用です。SMTPの結果が不明な場合、ジョブ再試行で重複送信される可能性があります。
 
-handlerの案です。
-
-```rust
-pub async fn send_welcome_email(
-    job: SendWelcomeEmail,
-    ctx: JobContext<WorkerState>,
-) -> Result<(), JobError> {
-    let Some(user) = User::find(&ctx.state.db, job.user_id).await? else {
-        return Ok(()); // 送信前に退会済みなら、何もせず完了する。
-    };
-
-    Welcome::to(&user.email)
-        .deliver(&ctx.state.mailer)
-        .await?;
-    Ok(())
-}
-```
+送信処理は生成された`apps/worker/src/bin/job-worker.rs`のhandler内へ、ユーザー取得・`mailers::welcome::build(to, from)`・`message.deliver(&mailer)`を組み込みます。生成直後のhandlerはジョブIDを表示して成功扱いにするだけで、メールは送信しません。
 
 実行処理はworker側で登録します。
 
@@ -118,7 +102,7 @@ generatorは`apps/worker/src/bin/job-worker.rs`へ登録例を追加します。
 ## 常駐して処理する
 
 ```sh
-kouga worker --queue mail
+kouga worker --queue default
 ```
 
 queueを監視し、新しいジョブを処理し続けます。メールと画像処理を別々にスケールさせたい場合は、queueとworkerのビルド対象を分けられます。
@@ -126,14 +110,14 @@ queueを監視し、新しいジョブを処理し続けます。メールと画
 ## ワンショットタスクとして処理する
 
 ```sh
-kouga worker --queue mail --once
+kouga worker --queue default --once
 ```
 
 現行の生成workerは最大1件・30秒で新規取得を止め、終了します。件数や時間を変える場合は、生成されたworkerの`run_once(max_jobs, max_duration, ...)`を編集します。
 
 取得停止後の処理には終了猶予時間を設けます。実行中のジョブを無制限に待つことはせず、完了できなかった分はleaseと再試行の規則に従います。
 
-Cloud Run JobsやECSの単発taskで、まとめて処理するバッチに使う想定です。queueを使わない登録済みの業務処理は、`kouga runner <task>`でも実行できます。
+Cloud Run JobsやECSの単発taskで、まとめて処理するバッチに使う想定です。認証のパスワードリセット用メールworkerは`kouga worker --queue mail --once`です。queueを使わない登録済みの業務処理は、`kouga runner <task>`でも実行できます。
 
 ## 失敗を確認する
 
@@ -150,8 +134,9 @@ workerは失敗したジョブを間隔を空けて再試行し、上限に達�
 ## HTTPとworkerを別々に届ける
 
 ```sh
-docker build --target http -t taskboard-http .
-docker build --target worker -t taskboard-worker .
+kouga dockerfile
+docker build --build-context kouga=/path/to/kouga --target http -t taskboard-http .
+docker build --build-context kouga=/path/to/kouga --target worker -t taskboard-worker .
 ```
 
 引数の形式を変えるときは、先に新形式を読めるworkerを配備します。queueに旧形式のジョブが残る間は、その形式を扱うhandlerも維持してください。

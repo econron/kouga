@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。型名・属性・関数は未実装のAPI案です。コードは関心のある部分を抜粋しています。
+> `Request` derive、`Validated<T>`、`ValidatedQuery<T>`、`Patch<T>`、三つの基本ルールとcustom検証は実装済みです。以下は関心部分の抜粋で、完全に動く生成コードは`kouga generate resource`後の`src/requests/tasks.rs`と`src/controllers/tasks.rs`を参照してください。
 
 Requestは、「この操作で何を受け取り、どの値なら処理してよいか」を表します。controllerは検証済みのRequestを受け取ります。
 
@@ -61,17 +61,17 @@ pub title: String,
 ```rust
 #[kouga_http::endpoint(operation_id = "tasks.create")]
 pub async fn create(
-    state: State<AppState>,
+    State(db): State<Db>,
     input: Validated<CreateTaskRequest>,
-) -> Result<Created<TaskResponse>, Error> {
-    let task = Task::create(&state.db, NewTask {
+) -> Result<Created<TaskOutput>, Error> {
+    let task = Task::create(&db, NewTask {
         title: input.title.clone(),
         completed: false,
-    }).await?;
+    }).await.map_err(|error| Error(error.into_core()))?;
 
     Ok(Created::new(
         format!("/tasks/{}", task.id),
-        TaskResponse::from(task),
+        TaskOutput::from(task),
     ))
 }
 ```
@@ -85,7 +85,7 @@ let router = Router::<AppState>::new()
 // 配信時に router.with_state(state) を呼ぶ。
 ```
 
-この抜粋ではtitleだけを保存し、completedはfalseに固定しています。`NewTask`はmodel側の作成属性、`TaskResponse`は公開する出力型です。`Created`は201とLocation、`data`形式の本文を返します。
+この抜粋ではtitleだけを保存し、completedはfalseに固定しています。`NewTask`はmodel側の作成属性、`TaskOutput`は公開する出力型です。生成された実コードは`completed`を省略時にDB既定値へ任せます。`Created`は201とLocation、`data`形式の本文を返します。
 
 `Validated<T>`を引数に指定すると、検証は呼び出し前に実行されます。controllerに`validate()`や検証エラー用の分岐は書きません。`Validated<T>`は検証済みの値を読み取るための型で、内側を変更することはできません。
 

@@ -1,7 +1,7 @@
 use super::{check_app, invalid, valid_name};
 use std::{error::Error, fs, io, path::Path, process::Command};
 
-const GREET_ROUTE: &str = r#"    let router = router
+const GREET_ROUTE: &str = r#"    router
         .get(
             "/greet/{name}",
             kouga_http::Endpoint::handler(
@@ -13,7 +13,7 @@ const GREET_ROUTE: &str = r#"    let router = router
                     .response::<kouga_http::Json<String>>(),
             ),
         )
-        .expect("generated route is valid");
+        .expect("generated route is valid")
 "#;
 const GREET_BEGIN: &str = "    // kouga: greeting begin\n";
 const GREET_END: &str = "    // kouga: greeting end\n";
@@ -34,17 +34,18 @@ pub(super) fn with_greeting(lib: &str) -> Result<String, io::Error> {
             "lib.rs was edited; register gRPC greeting route manually",
         ));
     }
-    Ok(lib.replacen(
-        at,
-        &format!("{GREET_BEGIN}{GREET_ROUTE}{GREET_END}    router\n}}"),
-        1,
-    ))
+    Ok(lib.replacen(at, &format!("{GREET_BEGIN}{GREET_ROUTE}{GREET_END}}}"), 1))
 }
 
 pub(super) fn without_greeting(lib: &str) -> Option<String> {
     let begin = lib.find(GREET_BEGIN)?;
     let end = begin + lib[begin..].find(GREET_END)? + GREET_END.len();
-    let old = format!("{}{}", &lib[..begin], &lib[end..]);
+    let suffix = &lib[end..];
+    let old = if suffix.starts_with('}') {
+        format!("{}    router\n{suffix}", &lib[..begin])
+    } else {
+        format!("{}{suffix}", &lib[..begin])
+    };
     let baseline = include_str!("../templates/lib.rs.txt");
     let expanded = expanded_baseline();
     if let Some(prefix) = old.strip_suffix(expanded.as_str()) {
