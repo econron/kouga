@@ -105,6 +105,10 @@ pub(super) fn generate() -> Result<(), Box<dyn Error>> {
             );
         }
     }
+    if Path::new("apps/lambda/src/main.rs").is_file() {
+        let name = package(Path::new("apps/lambda/Cargo.toml"))?;
+        target(&mut dockerfile, "lambda-http", &name, &name, "");
+    }
     fs::write("Dockerfile", dockerfile)?;
     fs::write(
         ".dockerignore",

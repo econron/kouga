@@ -31,6 +31,8 @@ async fn no_endpoint_keeps_local_logging_without_exporting() {
         Ok(())
     });
     tracing::info!(message = "local_only");
+    telemetry.flush(Duration::from_secs(1)).await.unwrap();
+    telemetry.flush(Duration::from_secs(1)).await.unwrap();
     telemetry.shutdown(Duration::from_secs(1)).await.unwrap();
     assert!(called.load(Ordering::SeqCst));
 }

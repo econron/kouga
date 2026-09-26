@@ -338,6 +338,36 @@ impl Telemetry {
         self.shutdown_hooks.push(Box::new(hook));
     }
 
+    /// Flush buffered signals before a short-lived invocation returns.
+    /// The providers remain usable for later invocations in the same process.
+    pub fn flush(
+        &self,
+        deadline: Duration,
+    ) -> impl std::future::Future<Output = Result<(), TelemetryError>> + Send + 'static {
+        let tracer = self.tracer.clone();
+        let meter = self.meter.clone();
+        let logger = self.logger.clone();
+        async move {
+            let task = tokio::task::spawn_blocking(move || {
+                let mut failed = false;
+                if let Some(provider) = tracer {
+                    failed |= provider.force_flush().is_err();
+                }
+                if let Some(provider) = meter {
+                    failed |= provider.force_flush().is_err();
+                }
+                if let Some(provider) = logger {
+                    failed |= provider.force_flush().is_err();
+                }
+                failed
+            });
+            match tokio::time::timeout(deadline, task).await {
+                Ok(Ok(false)) => Ok(()),
+                _ => Err(TelemetryError::Shutdown),
+            }
+        }
+    }
+
     pub async fn shutdown(self, deadline: Duration) -> Result<(), TelemetryError> {
         let task = tokio::task::spawn_blocking(move || {
             let mut failed = false;

@@ -746,7 +746,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T31 — 役割別Dockerイメージ
 
-- 状態: レビュー待ち
+- 状態: 統合済み
 - 担当者: Codex
 - ブランチ: `task/T31-docker-images`
 - worktree: `.worktrees/T31-docker-images`
@@ -779,10 +779,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T32 — 配備先への実行対応
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: レビュー待ち
+- 担当者: Codex
 - ブランチ: `task/T32-platform-runtime`
-- worktree: `.worktrees/T32-platform-runtime`（作成前）
+- worktree: `.worktrees/T32-platform-runtime`
 - 依存: T31、T27
 - 対応仕様: 3.3、4.15.1
 - 主担当領域: Lambda adapter・配備先実行設定・手順
@@ -791,12 +791,16 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] ローカルで可能なPORT/終了/ワンショットとLambdaイベントadapterを結合検証する。
-- [ ] バイナリ本文・headers・認証・flush・期限を確認し、gRPCとの対応差と実クラウド未検証事項を記録する。
+- [x] ローカルで可能なPORT/終了/ワンショットとLambdaイベントadapterを結合検証する。
+- [x] バイナリ本文・headers・認証・flush・期限を確認し、gRPCとの対応差と実クラウド未検証事項を記録する。
 
 **今回含めないこと**: 許可なしの実クラウドdeploy、PostgreSQL queueからの自動クラウド起動。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `kouga add lambda`で`apps/lambda`の独立packageを生成し、AWS公式`lambda_http` 1.3.1のRuntime Interface ClientでFunction URL/API Gateway HTTP API v2を既存Kouga routerへ接続する。`kouga dockerfile`には追加時だけ`lambda-http`最終targetが出る。HTTP-firstとgRPC-firstの両生成順序、`add otel`の前後順序をCLIテストで確認。HTTP/worker側`cargo tree`には`lambda_http`がなく、Lambda packageのみに存在する。生成DB＋ジョブ＋Lambda workspaceと、OTel追加済みLambda workspaceの`cargo check --workspace --offline`が通過。HTTP/gRPC同居でもネイティブgRPCは別入口のままで、Lambda HTTP adapterを流用しない。
+
+生成Lambdaのunitテストはbase64由来のバイナリ本文、認証ヘッダー、Cookie等の応答ヘッダー、401/403、Function URL v2の`sourceIp`（偽装された`x-forwarded-for`より優先）、期限切れ/欠落/有効期限を確認。生成した実バイナリをローカルRuntime APIモックから起動して`/health`の200応答を確認し、OTel有効化後も同じ経路が成功。OTel三signalは`Telemetry::flush(deadline)`で`shutdown`前にCollectorへ到達し、Collector停止時でもHTTP 200を維持した。ローカルDockerで`lambda-http` release imageをビルドし、展開サイズ113,241,764バイト、UID/GID 65532、`--read-only --tmpfs /tmp`で起動確認。T31で確認した通常HTTPのPORT/SIGTERM、worker `--once`、DB/SMTP結合はT32で変更しておらず、T31の回帰テストをworkspace全テストで再実行した。Rust 1.94のworkspace `fmt --check`、`clippy --all-targets -D warnings`、`test --workspace`が通過。生成OTel入りアプリの`clippy --all-targets -D warnings`も通過。
+
+新規直接依存`lambda_http` 1.3.1はApache-2.0、MSRV 1.84.0。依存するAWS公式`lambda_runtime` 1.4.0はApache-2.0/MSRV 1.84.0、`aws_lambda_events` 1.2.0はMIT/MSRV 1.84.0。Rust 1.94で生成アプリ全体の型検査を実施した。公式資料を踏まえてCloud Run service/Jobs、ECS service/task、Lambdaコンテナの実行条件・設定例を利用者ガイドへ追記した。実Cloud Run/ECS/Lambdaへのpush・deploy、実AWS Function URLとIAM/VPC、外部レジストリ転送量は未検証。Lambda workerの自動queue起動、REST API v1/ALB/WebSocket/ネイティブgRPCイベントも非対応。直接Invokeではイベント内`sourceIp`を偽装できるため、入口権限を制限すること。
 
 ### T33 — 利用者ガイドと通しのサンプル
 

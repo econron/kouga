@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> 開発プレビュー。以下はローカルcheckoutからビルドしたCLIで利用できます。DB管理のrollback以降、配布済みバイナリ、Docker配備は後続タスクです。
+> 開発プレビュー。以下はローカルcheckoutからビルドしたCLIで利用できます。DB管理のrollback以降、配布済みバイナリ、クラウドへの自動配備は未対応です。
 
 ## よく使うコマンド
 
@@ -12,6 +12,7 @@
 | gRPCでアプリを作る | `kouga new taskboard --api grpc` |
 | HTTPと同居するgRPCの入口を追加 | `kouga add grpc` |
 | gRPCアプリへHTTPの入口を追加 | `kouga add http` |
+| Lambda用HTTP入口を追加 | `kouga add lambda`（HTTP生成後） |
 | gRPCサーバーを起動 | `kouga server --api grpc` |
 | 開発サーバーを起動 | `kouga server` |
 | ルートを確認 | `kouga routes` |
@@ -38,6 +39,7 @@
 | OpenAPIを生成 | `kouga openapi generate` |
 | OpenAPIの更新漏れを確認 | `kouga openapi check` |
 | OpenTelemetryを追加 | `kouga add otel` |
+| 役割別Dockerfileを生成 | `kouga dockerfile` |
 | テスト | `cargo test` |
 
 `runner <task>`は`src/bin/task-<task>.rs`を実行します。`jobs enqueue`のpayloadは標準入力から読み、引数や一覧・詳細へ表示しません。未登録のジョブ名はworkerで隔離されるため、生成済みの契約名を指定してください。`maintenance`はDBの期限切れcache・token等を清掃します。ストレージ実体は設定済み`Storage::cleanup`をアプリのrunnerから呼びます。生成channelの認可は初期状態ですべて拒否するため、購読を有効にする前に業務用policyを記述してください。

@@ -1,0 +1,126 @@
+use axum::{body::{Body, to_bytes}, extract::ConnectInfo, Router};
+use lambda_http::{Body as LambdaBody, Request, RequestExt, Response, request::RequestContext};
+use std::{net::{IpAddr, SocketAddr}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use tower::ServiceExt;
+
+const RESPONSE_LIMIT: usize = 6 * 1024 * 1024;
+const DEADLINE_MARGIN: Duration = Duration::from_millis(500);
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<(), lambda_http::Error> {
+    // DB_SETUP
+    let app = kouga_openapi::serve(app_http::router(), state, "APP_CRATE", "0.1.0", false)?;
+    // OTEL_SETUP
+    lambda_http::run(lambda_http::service_fn(|event: Request| {
+        let app = app.clone();
+        // OTEL_BORROW
+        async move {
+            if source_ip(&event).is_none() {
+                return Err::<Response<LambdaBody>, lambda_http::Error>(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "supported API Gateway v2 sourceIp is required",
+                ).into());
+            }
+            let deadline = event.lambda_context_ref().map(|ctx| ctx.deadline);
+            let remaining = remaining_time(deadline)?;
+            let result = tokio::time::timeout(remaining, handle(app, event)).await;
+            // OTEL_FLUSH
+            let response = result
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Lambda invocation deadline reached"))??;
+            Ok::<_, lambda_http::Error>(response)
+        }
+    })).await?;
+    Ok(())
+}
+
+fn remaining_time(deadline_ms: Option<u64>) -> Result<Duration, lambda_http::Error> {
+    let deadline_ms = deadline_ms.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Lambda context deadline missing"))?;
+    let deadline = UNIX_EPOCH + Duration::from_millis(deadline_ms);
+    let remaining = deadline.duration_since(SystemTime::now()).unwrap_or_default();
+    remaining.checked_sub(DEADLINE_MARGIN).filter(|time| !time.is_zero())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, "insufficient Lambda invocation time").into())
+}
+
+fn source_ip(event: &Request) -> Option<IpAddr> {
+    match event.request_context_ref()? {
+        RequestContext::ApiGatewayV2(context) => context.http.source_ip.as_deref()?.parse().ok(),
+        _ => None,
+    }
+}
+
+async fn handle(app: Router, event: Request) -> Result<Response<LambdaBody>, lambda_http::Error> {
+    let source = source_ip(&event);
+    let (parts, body) = event.into_parts();
+    let mut request = axum::http::Request::from_parts(parts, Body::from(body.as_ref().to_vec()));
+    if let Some(ip) = source {
+        request.extensions_mut().insert(ConnectInfo(SocketAddr::new(ip, 0)));
+    }
+    let response = app.oneshot(request).await?;
+    let (parts, body) = response.into_parts();
+    let bytes = to_bytes(body, RESPONSE_LIMIT).await?;
+    Ok(Response::from_parts(parts, LambdaBody::Binary(bytes.to_vec())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{routing::post, http::{header, StatusCode}};
+
+    #[tokio::test]
+    async fn binary_body_headers_and_auth_pass_through() {
+        let app = Router::new().route("/upload", post(|headers: axum::http::HeaderMap, body: axum::body::Bytes| async move {
+            assert_eq!(headers.get(header::AUTHORIZATION).unwrap(), "Bearer secret");
+            assert_eq!(&body[..], &[0, 255, 42]);
+            ([(header::SET_COOKIE, "session=ok"), (header::CONTENT_TYPE, "application/octet-stream")], vec![255, 0])
+        }));
+        let event = axum::http::Request::builder().method("POST").uri("/upload")
+            .header(header::AUTHORIZATION, "Bearer secret")
+            .body(LambdaBody::Binary(vec![0, 255, 42])).unwrap();
+        let response = handle(app, event).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get(header::SET_COOKIE).unwrap(), "session=ok");
+        assert_eq!(response.body().as_ref(), &[255, 0]);
+    }
+
+    #[tokio::test]
+    async fn auth_and_error_status_are_not_swallowed() {
+        let app = Router::new().route("/private", post(|headers: axum::http::HeaderMap| async move {
+            if headers.get(header::AUTHORIZATION).is_none() { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }
+        }));
+        for (auth, expected) in [(None, StatusCode::UNAUTHORIZED), (Some("Bearer invalid"), StatusCode::FORBIDDEN)] {
+            let mut builder = axum::http::Request::builder().method("POST").uri("/private");
+            if let Some(auth) = auth { builder = builder.header(header::AUTHORIZATION, auth); }
+            let response = handle(app.clone(), builder.body(LambdaBody::Empty).unwrap()).await.unwrap();
+            assert_eq!(response.status(), expected);
+        }
+    }
+
+    #[test]
+    fn deadline_rejects_expired_or_missing_context() {
+        assert!(remaining_time(None).is_err());
+        assert!(remaining_time(Some(1)).is_err());
+        let soon = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 + 200;
+        assert!(remaining_time(Some(soon)).is_err());
+        let later = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 + 5_000;
+        assert!(remaining_time(Some(later)).unwrap() < Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn function_url_event_uses_context_source_ip_not_forwarded_header() {
+        let json = r#"{
+            "version":"2.0", "routeKey":"$default", "rawPath":"/", "rawQueryString":"",
+            "headers":{"host":"example.lambda-url.us-east-1.on.aws","authorization":"Bearer token","x-forwarded-for":"203.0.113.9"},
+            "requestContext":{"http":{"method":"POST","path":"/","protocol":"HTTP/1.1","sourceIp":"198.51.100.4","userAgent":"test"}},
+            "body":"AP8q", "isBase64Encoded":true
+        }"#;
+        let event = lambda_http::request::from_str(json).unwrap();
+        let app = Router::new().route("/", post(|ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: axum::http::HeaderMap, body: axum::body::Bytes| async move {
+            assert_eq!(peer.ip().to_string(), "198.51.100.4");
+            assert_eq!(headers.get(header::AUTHORIZATION).unwrap(), "Bearer token");
+            assert_eq!(&body[..], &[0, 255, 42]);
+            StatusCode::NO_CONTENT
+        }));
+        let response = handle(app, event).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+}

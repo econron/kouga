@@ -10,6 +10,7 @@ mod auth;
 mod container;
 mod contracts;
 mod features;
+mod lambda;
 mod operations;
 mod otel;
 mod resource;
@@ -171,6 +172,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         }
         Commands::Add { api } => match api.as_str() {
             "otel" => operations::add_otel()?,
+            "lambda" => lambda::add()?,
             _ => api::add(&api)?,
         },
         Commands::Dockerfile => container::generate()?,

@@ -339,6 +339,8 @@ runtime構築は同期mainで設定読込後に行い、Tokio multi_thread Build
 
 T26の`Telemetry::init(config)`はguardとproviderを保持し、`shutdown(deadline).await`を提供する。利用者providerも同じshutdown入口へ登録できる。SDK/exporterは独立crateだけに置く。OTEL_SERVICE_NAME/RESOURCE_ATTRIBUTES/EXPORTER_OTLP_ENDPOINT/HEADERS、TRACES_EXPORTER/METRICS_EXPORTER/LOGS_EXPORTER（otlp/none）、TRACES_SAMPLER（always_on/always_off/parentbased_traceidratio）とSAMPLER_ARGを初版対応とする。endpointなしでは送信なし、logsは明示有効化。OTLP/HTTP protobufのみ、queue metadataから各試行spanへlink、baggage既定無効。細かい送信上限はT26で追加してもT03の公開型を変更しない。
 
+T32の`Telemetry::flush(deadline)`はproviderを終了せずtrace/metrics/logsを上限時間内に送る。Lambda adapterは各invocationの応答前にこれを呼び、exporter障害では診断を標準エラーへ出すが業務応答を失敗させない。`kouga add lambda`は`apps/lambda`へ`lambda_http`を持つ専用packageを生成し、HTTP routerを共有する。HTTP/worker packageには同依存を追加しない。対応イベントはFunction URL/API Gateway HTTP API v2で、認証用ClientIpは`requestContext.http.sourceIp`を使用する。生成`lambda-http` Docker targetはRuntime API client込みのバイナリだけを載せる。gRPCと常駐workerにはこのHTTP adapterを適用しない。
+
 T27ではHTTP/gRPC/queue/workerの`otel` featureが`kouga-telemetry`を任意追加する。HTTPは`HttpOptions::trusted_trace_peers`で直接TCP peerを明示したときだけtraceparent/tracestateを親として採用する。gRPCは生成handler内で`kouga_grpc::trace_request(metadata, trusted_peer, work)`を使う。queueは現在spanを既存のtrace metadata列へ自動保存し、workerは試行ごとの新規spanから投入spanへlinkする。`tracing` spanのasync伝播に`Instrument`を使い、workerバイナリは`run_once`後に`Telemetry::shutdown`を呼ぶ。生SQLや任意の外部HTTPクライアントは利用者が個別にspan/伝播を追加する。
 
 SQLxの汎用`Acquire<'c>`を使う公開modelの取得・CRUD・preloadとqueueのenqueue系は`impl Future + Send`を返す。これによりAxumの`Send` handler内でpool/transactionからそのまま`.await`でき、呼び出し記法は変わらない。

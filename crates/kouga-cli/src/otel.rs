@@ -199,6 +199,43 @@ pub(super) fn add() -> Result<(), Box<dyn Error>> {
             updates.push((path, updated));
         }
     }
+    let lambda_dir = super::worker_package::root().join("apps/lambda");
+    let lambda_manifest = lambda_dir.join("Cargo.toml");
+    if lambda_manifest.is_file() {
+        let old = fs::read_to_string(&lambda_manifest)?;
+        if old.contains("kouga-telemetry =") {
+            return Err(invalid("Lambda telemetry already installed").into());
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| invalid("source checkout unavailable"))?;
+        let updated = old.replacen(
+            "[dependencies]\n",
+            &format!(
+                "[dependencies]\nkouga-telemetry = {{ path = {:?} }}\n",
+                root.join("crates/kouga-telemetry").display().to_string()
+            ),
+            1,
+        );
+        let path = lambda_dir.join("src/main.rs");
+        let code = fs::read_to_string(&path)?;
+        if !code.contains("// OTEL_SETUP")
+            || !code.contains("// OTEL_BORROW")
+            || !code.contains("// OTEL_FLUSH")
+        {
+            eprintln!(
+                "Required Lambda change: initialize telemetry once and flush within the invocation deadline before returning."
+            );
+            return Err(invalid("Lambda adapter was edited; add OTel manually").into());
+        }
+        let code = code
+            .replacen("// OTEL_SETUP", &super::lambda::telemetry_setup(&name), 1)
+            .replacen("// OTEL_BORROW", "let telemetry = telemetry.clone();", 1)
+            .replacen("// OTEL_FLUSH", super::lambda::telemetry_flush(), 1);
+        updates.push((lambda_manifest, updated));
+        updates.push((path, code));
+    }
     for (path, content) in &updates {
         let old = fs::read_to_string(path)?;
         println!("--- {}\n+++ {}", path.display(), path.display());
