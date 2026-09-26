@@ -14,6 +14,8 @@ taskboard-rpc = { path = "../../crates/rpc" }
 kouga-grpc = { path = "KOUGA_SOURCE/crates/kouga-grpc" }
 kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
 kouga-core = { path = "KOUGA_SOURCE/crates/kouga-core" }
+kouga-telemetry = { path = "KOUGA_SOURCE/crates/kouga-telemetry" }
+tracing = "=0.1.44"
 tonic = { version = "=0.14.6", features = ["transport"] }
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
 tower = { version = "=0.5.3", features = ["util"] }

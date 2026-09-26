@@ -208,6 +208,7 @@ impl Board {
         Self { db }
     }
 
+    #[tracing::instrument(skip_all, name = "taskboard.project.create")]
     pub async fn create_project(
         &self,
         actor: Uuid,
@@ -300,6 +301,7 @@ impl Board {
         Self::invalidate_in(&mut tx, id).await?;
         tx.commit().await.map_err(db)
     }
+    #[tracing::instrument(skip_all, name = "taskboard.task.create")]
     pub async fn create_task(
         &self,
         actor: Uuid,

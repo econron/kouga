@@ -11,8 +11,17 @@ cd /tmp/my-taskboard
 export DATABASE_URL='postgres://postgres:password@localhost:5432/taskboard_dev'
 kouga db create
 kouga db migrate
+BOARD_SEED_PASSWORD='choose a local password' kouga db seed
+kouga openapi generate
+kouga openapi check
 kouga server
 ```
+
+The registered seed inserts one demo user (`seed@example.invalid`), project and task idempotently. It requires `BOARD_SEED_PASSWORD` (at least 12 characters), does not replace an existing password, and refuses `KOUGA_ENV=production`. Use a disposable development database. `GET /health` is process liveness; `GET /ready` checks PostgreSQL with a one-second deadline and returns 503 when unavailable. All other HTTP routes use a PostgreSQL-backed per-peer-IP limit, shared by every HTTP process. `BOARD_RATE_LIMIT_PER_MINUTE` defaults to 120; a rejected request returns 429 and `Retry-After`. The server fails closed if the rate-limit store is unavailable. Do not put an untrusted reverse proxy in `trusted_proxies`.
+
+The generated Taskboard opts into OTLP/HTTP protobuf with `kouga add otel`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to send traces and metrics, and `OTEL_LOGS_EXPORTER=otlp` to additionally send logs; stdout JSON logs remain. Default service names are `taskboard-http`, `taskboard-grpc`, `taskboard-worker` for auth mail, and `taskboard-notice-worker`; use `OTEL_SERVICE_NAME` for a deployment-specific override. The exporter has bounded queues and a five-second flush at graceful or one-shot exit. Collector failure must not fail business work; telemetry may be dropped. Custom Taskboard spans/logs/metrics use operation names and counts only, never request bodies, passwords, tokens, email addresses or user IDs. The standard queue metadata carries trace context separately from the job payload and the worker links each attempt to its enqueue context.
+
+`openapi.yml` is generated from the actual HTTP route/Request/response declarations, including Board CRUD, auth and multipart attachments. `/docs` and `/openapi.yml` are available when `KOUGA_ENV` is unset, `development` or `test`; both are absent in production. Run `kouga openapi generate` after changing request constraints or auth middleware and `kouga openapi check` in CI. `examples/taskboard/check-openapi.sh` exercises a stale file after both kinds of change, then restores the source and checks regenerated output.
 
 `KOUGA_BIN` can point to an already-built Kouga executable. The generator refuses an existing destination. Generated `Cargo.toml` uses local paths to the checkout, so keep that checkout available; re-run the script from another checkout to relocate the app. Set a separate `TEST_DATABASE_URL` and run `cargo +1.94.0 test --workspace --locked`; `kouga-test` creates and removes a schema per test. Do not use a production database for tests.
 

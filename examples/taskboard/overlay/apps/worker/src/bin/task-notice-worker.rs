@@ -3,6 +3,7 @@ use kouga_mailer::{MailMessage, SmtpMailer};
 use kouga_model::{Db, Uuid, sqlx};
 use kouga_worker::{JobContext, JobError, Worker, WorkerOptions};
 use std::{sync::Arc, time::Duration};
+use tracing::Instrument;
 
 struct State {
     db: Db,
@@ -15,6 +16,7 @@ async fn process(
     owner_id: Option<Uuid>,
     ctx: JobContext<State>,
 ) -> Result<(), JobError> {
+    async move {
     let state = &ctx.state;
     let row: Option<(Uuid, String, String)> = sqlx::query_as(
         "SELECT t.owner_id, t.title, u.email FROM tasks t JOIN users u ON u.id=t.owner_id WHERE t.id=$1",
@@ -56,7 +58,14 @@ async fn process(
     message
         .deliver(&state.mailer)
         .await
-        .map_err(|_| JobError::Retryable("task mail delivery failed"))
+        .map_err(|_| JobError::Retryable("task mail delivery failed"))?;
+    opentelemetry::global::meter("taskboard")
+        .u64_counter("taskboard.mail.sent")
+        .build()
+        .add(1, &[]);
+    tracing::info!("taskboard notification delivered");
+    Ok(())
+    }.instrument(tracing::info_span!("taskboard.notification.send")).await
 }
 
 async fn old(job: TaskCreatedV1, ctx: JobContext<State>) -> Result<(), JobError> {
@@ -69,6 +78,11 @@ async fn current(job: TaskCreatedV2, ctx: JobContext<State>) -> Result<(), JobEr
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = kouga_telemetry::TelemetryConfig::from_env()?;
+    if std::env::var_os("OTEL_SERVICE_NAME").is_none() {
+        config.service_name = "taskboard-notice-worker".into();
+    }
+    let telemetry = kouga_telemetry::Telemetry::init(config)?;
     let db = kouga_model::db::connect(&std::env::var("DATABASE_URL")?, 5, Duration::from_secs(5))
         .await?;
     let host = std::env::var("KOUGA_SMTP_HOST")?;
@@ -121,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         worker.run_forever(cancellation).await?;
     }
+    let _ = telemetry.shutdown(Duration::from_secs(5)).await;
     Ok(())
 }
 
