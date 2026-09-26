@@ -53,6 +53,7 @@ fn status(error: kouga_core::Error) -> Status {
 
 #[tonic::async_trait]
 impl rpc::board_server::Board for BoardService {
+    #[tracing::instrument(skip_all, name = "taskboard.grpc.create_project")]
     async fn create_project(
         &self,
         request: Request<rpc::CreateProjectRequest>,
@@ -83,6 +84,7 @@ impl rpc::board_server::Board for BoardService {
         .await
     }
 
+    #[tracing::instrument(skip_all, name = "taskboard.grpc.create_task")]
     async fn create_task(
         &self,
         request: Request<rpc::CreateTaskRequest>,
@@ -106,6 +108,7 @@ impl rpc::board_server::Board for BoardService {
         .await
     }
 
+    #[tracing::instrument(skip_all, name = "taskboard.grpc.get_task")]
     async fn get_task(
         &self,
         request: Request<rpc::GetTaskRequest>,
@@ -125,6 +128,7 @@ impl rpc::board_server::Board for BoardService {
         .await
     }
 
+    #[tracing::instrument(skip_all, name = "taskboard.grpc.complete_task")]
     async fn complete_task(
         &self,
         request: Request<rpc::CompleteTaskRequest>,
@@ -144,6 +148,7 @@ impl rpc::board_server::Board for BoardService {
         .await
     }
 
+    #[tracing::instrument(skip_all, name = "taskboard.grpc.project_count")]
     async fn get_project_count(
         &self,
         request: Request<rpc::GetProjectCountRequest>,

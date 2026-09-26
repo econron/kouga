@@ -14,7 +14,7 @@ kouga-cache = { path = "KOUGA_SOURCE/crates/kouga-cache", default-features = fal
 kouga-channel = { path = "KOUGA_SOURCE/crates/kouga-channel" }
 kouga-core = { path = "KOUGA_SOURCE/crates/kouga-core" }
 kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
-kouga-queue = { path = "KOUGA_SOURCE/crates/kouga-queue" }
+kouga-queue = { path = "KOUGA_SOURCE/crates/kouga-queue", features = ["otel"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 tracing = "=0.1.44"

@@ -971,7 +971,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T42 — 単一アプリの観測・OpenAPI・運用経路
 
-- 状態: 未着手
+- 状態: レビュー待ち（T40統合済み、T41と並行実装。mainへ未統合）
 - ブランチ: `task/T42-taskboard-observability`
 - worktree: `.worktrees/T42-taskboard-observability`
 - 依存: T40（T41と並行可能）
@@ -980,6 +980,12 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 **実装すること**: Taskboardへ登録済みseed、DB readiness、複数HTTP process共有rate-limit、OTel exporterと独自span/log/metricsを接続。HTTP/gRPC/worker別`service.name`とjob contextをテストCollectorで追い、Collector停止中も上限付きbuffer/業務継続、ワンショットflushを検証する。CRUD/認証/添付を含む生成OpenAPIのschema・開発UI・本番非公開、Request/認証変更後の`kouga openapi check`失敗→再生成成功を通し試験にする。
 
 **完了条件**: 同一生成アプリでDB停止時readiness/副作用なし、rate超過、終了処理、同時HTTP/gRPC/workerのcontext分離と機密非記録を確認。seedとOpenAPIの文書化コマンドを実行し、変更時差分をCIで検知する。性能再計測は環境と反復回数を固定して記録する。
+
+**T42実装・公開API**: 生成Taskboardに`task-seed`（登録済み利用者/Project/Task、冪等・本番禁止）、`GET /ready`（DB疎通）、PostgreSQL共有rate-limit（`BOARD_RATE_LIMIT_PER_MINUTE`）、HTTP/gRPC/通知worker別のOTel設定・独自span/log/metric、ジョブtrace context、停止時のbest-effort flushを追加。添付のbinary応答を含むOpenAPI schema、`check-openapi.sh`、CI差分検査を追加。Collector確認用`test-collector.py`と固定条件計測用`benchmarks/t42-taskboard.sh`を追加した。生成コマンドと環境変数はTaskboard READMEに記載。
+
+**T42検証**: Rust 1.94の本体workspace/生成fixture双方でfmt、Clippy `-D warnings`、全テストを通過（実PostgreSQL使用）。専用DBでmigration 5件とseed 2回を実行し、登録件数1/1/1、本番seed拒否を確認。生成OpenAPIのCRUD/認証/添付schema、開発UIと本番404、Request制約/認証設定変更で`openapi check`失敗→復元・再生成成功を確認。2つのHTTP processで同一IPのrate上限を共有し429と`Retry-After`、DB停止時readiness 503・副作用なし、両processのSIGTERM exit 0を確認。実CollectorでHTTPのtraces/metrics/logs、通知workerのジョブspanとtraceparent link、gRPCの独立`service.name`を受信。Collector停止中の業務継続、bounded shutdown、テスト用秘密値の非記録は自動結合試験で確認した。
+
+**T42性能・残件**: macOS arm64、Rust debug、Docker PostgreSQL 17、k6 4 VU×15秒×各2回。JSONは502.93/450.57 req/s、readは47.82/70.35 req/s、CRUDは65.24/20.99 req/s、全run失敗率0。共有ホストでT41のビルドと時間帯が重なるため参考値であり、T40比較・本番性能判定には使わない。実認証付きgRPC業務RPCからworkerまでの同時context分離、全役割Docker imageと障害横断はT41/T43で再確認する。クラウドdeploy/pushなし。
 
 ### T43 — 実ストレージ・境界/障害横断・配布方針
 
