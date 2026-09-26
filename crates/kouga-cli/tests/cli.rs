@@ -173,3 +173,45 @@ fn resource_generator_registers_routes_and_preserves_existing_files() {
     assert!(app.join("tests/tasks.rs").exists());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn auth_generator_creates_separate_mail_worker_without_overwriting() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("kouga-auth-cli-{}-{nonce}", std::process::id()));
+    let app = root.join("auth-app");
+    fs::create_dir(&root).unwrap();
+    let cli = env!("CARGO_BIN_EXE_kouga");
+    assert!(
+        Command::new(cli)
+            .args(["new", "auth-app", "--path"])
+            .arg(&app)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let generate = || {
+        Command::new(cli)
+            .current_dir(&app)
+            .args(["generate", "auth"])
+            .output()
+            .unwrap()
+    };
+    let first = generate();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let worker = app.join("src/bin/auth-mail-worker.rs");
+    let before = fs::read(&worker).unwrap();
+    assert!(!generate().status.success());
+    assert_eq!(fs::read(worker).unwrap(), before);
+    let lib = fs::read_to_string(app.join("src/lib.rs")).unwrap();
+    assert!(lib.contains("auth::routes(router)"));
+    assert!(app.join("tests/auth.rs").exists());
+    assert_eq!(fs::read_dir(app.join("migrations")).unwrap().count(), 4);
+    fs::remove_dir_all(root).unwrap();
+}

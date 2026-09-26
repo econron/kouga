@@ -1,0 +1,6 @@
+use kouga_model::Uuid;
+
+#[kouga_job::job(name = "auth.password_reset", version = 1, queue = "mail")]
+pub struct SendPasswordReset {
+    pub user_id: Uuid,
+}

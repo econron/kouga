@@ -143,6 +143,7 @@ fn fields(args: Vec<String>) -> Result<Vec<Field>, io::Error> {
 pub fn generate(command: GenerateCommand) -> Result<(), Box<dyn Error>> {
     check_app()?;
     match command {
+        GenerateCommand::Auth => super::auth::generate(),
         GenerateCommand::Resource { name, fields } => build(&name, fields, true),
         GenerateCommand::Model { name, fields } => build(&name, fields, false),
         GenerateCommand::Request { name, fields } => request_only(&name, fields),
@@ -217,7 +218,7 @@ fn request_only(name: &str, args: Vec<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn timestamp() -> Result<String, Box<dyn Error>> {
+pub(crate) fn timestamp() -> Result<String, Box<dyn Error>> {
     let latest = fs::read_dir("migrations")
         .ok()
         .into_iter()
@@ -237,7 +238,7 @@ fn timestamp() -> Result<String, Box<dyn Error>> {
     Ok(time.format("%Y%m%d%H%M%S").to_string())
 }
 
-fn build(name: &str, args: Vec<String>, resource: bool) -> Result<(), Box<dyn Error>> {
+pub(crate) fn build(name: &str, args: Vec<String>, resource: bool) -> Result<(), Box<dyn Error>> {
     let (singular, plural) = names(name)?;
     let fields = fields(args)?;
     let version = timestamp()?;

@@ -5,6 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod auth;
 mod resource;
 
 #[derive(Parser)]
@@ -51,6 +52,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum GenerateCommand {
+    Auth,
     Resource { name: String, fields: Vec<String> },
     Model { name: String, fields: Vec<String> },
     Request { name: String, fields: Vec<String> },

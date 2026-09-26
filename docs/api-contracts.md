@@ -205,6 +205,8 @@ timeoutはhandlerの応答生成からbody stream完了までの絶対期限。�
 
 **T18認証API**: `kouga-auth`はHTTPから独立し、`hash_password`/`verify_password`（Argon2id）、`issue_token(db, user_id, ttl)`、`authenticate(db, token) -> Result<Option<CurrentUser>, DbError>`、`revoke_token`、`revoke_user_tokens`、`authorize(actor, action, resource, policy)`、`owned_by(query, owner_column, actor)`を公開する。`CurrentUser { id: Uuid }`はgRPCでも共有できる。`Decision::{Permit,Deny,Hide}`はそれぞれ許可/403/404。トークンDB表は`kouga-auth/migrations/`からアプリmigrationへ組み込む。ユーザー表はアプリが持つ。HTTPは`kouga_http::auth::require_bearer(|state| &state.db)`を`Router::middleware`へ登録し、既存`bearer_auth`を通してsecurity metadataも付与する。DB障害は503、未認証は`WWW-Authenticate: Bearer`付き401。更新・削除は所有者scopeで同じtransaction内の`for_update`取得後に実施し、リクエストのowner IDを信用しない。
 
+**T19認証生成**: `kouga generate auth`は`users`モデルとmigration、公開の登録・ログイン・リセット申請/実行、Bearer必須のログアウト・`me`、別バイナリ`auth-mail-worker`とテストを生成する。パスワード処理はT03の制限付き`BlockingPool`、試行制限はPostgreSQL共有の`RateLimiter`を使う。生成HTTPはSMTPに依存せず、リセット申請はユーザーIDのみをmail queueへ登録する。workerが平文リセットトークンを発行しメール送信、DBにはSHA-256ハッシュのみ保存する。実行時は有効期限・未使用を条件に同一transactionで原子的に消費し、パスワード更新・他のリセットトークン・既存セッションを失効する。認証ルートと`bearerAuth`宣言は同一登録からOpenAPIへ反映される。標準serverは`ConnectInfo<SocketAddr>`を供給し、`ClientIp`を使う試行制限が単一プロセス・実接続で機能する。
+
 ## 7. DB・model・query
 
 `Db = sqlx::PgPool`、`Transaction<'a> = sqlx::Transaction<'a, Postgres>`を再公開する。独自executor traitは作らない。各操作は`A: sqlx::Acquire<'c, Database=Postgres> + Send`を受け、先頭でacquireして得たconnectionを操作終了まで使う。内部helperは`&mut PgConnection`を取る。これにより`&db`と`&mut tx`を共通で扱う。複数SQLの途中でpoolへ戻らない。

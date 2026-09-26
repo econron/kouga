@@ -1,0 +1,214 @@
+use axum::{
+    body::{Body, to_bytes},
+    extract::ConnectInfo,
+    http::{Request, StatusCode},
+};
+use kouga_model::{Uuid, sqlx};
+use kouga_test::{TestClient, TestDb};
+use sha2::{Digest, Sha256};
+
+async fn send(
+    client: &TestClient,
+    method: &str,
+    path: &str,
+    body: &str,
+    token: Option<&str>,
+) -> axum::response::Response {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json");
+    if let Some(token) = token {
+        request = request.header("authorization", format!("Bearer {token}"));
+    }
+    client
+        .send(
+            request
+                .extension(ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    41234,
+                ))))
+                .body(Body::from(body.to_owned()))
+                .unwrap(),
+        )
+        .await
+}
+
+async fn data(response: axum::response::Response) -> serde_json::Value {
+    serde_json::from_slice(&to_bytes(response.into_body(), 1_000_000).await.unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn auth_lifecycle_and_single_use_reset() {
+    if std::env::var("TEST_DATABASE_URL").is_err() {
+        return;
+    }
+    let isolated = TestDb::from_env("migrations").await.unwrap();
+    let routes = APP_CRATE::router();
+    for path in ["/auth/me", "/auth/logout"] {
+        assert!(
+            routes
+                .routes()
+                .iter()
+                .any(|operation| operation.path == path
+                    && operation.security.iter().any(|name| name == "bearerAuth"))
+        );
+    }
+    assert!(
+        routes
+            .routes()
+            .iter()
+            .any(|operation| operation.path == "/auth/login" && operation.security.is_empty())
+    );
+    let client = TestClient::new(routes.with_state(isolated.db().clone()));
+    let register = send(
+        &client,
+        "POST",
+        "/auth/register",
+        r#"{"email":"first@example.com","password":"correct horse battery"}"#,
+        None,
+    )
+    .await;
+    let status = register.status();
+    let body = data(register).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let token = body["data"]["token"].as_str().unwrap().to_owned();
+    let id = Uuid::parse_str(body["data"]["user"]["id"].as_str().unwrap()).unwrap();
+    let encoded: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_one(isolated.db())
+        .await
+        .unwrap();
+    assert!(!encoded.contains("correct horse battery"));
+    assert_eq!(
+        send(&client, "GET", "/auth/me", "", Some(&token))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    let wrong = send(
+        &client,
+        "POST",
+        "/auth/login",
+        r#"{"email":"first@example.com","password":"wrong password"}"#,
+        None,
+    )
+    .await;
+    let absent_login = send(
+        &client,
+        "POST",
+        "/auth/login",
+        r#"{"email":"absent@example.com","password":"wrong password"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(wrong.status(), absent_login.status());
+    let wrong = data(wrong).await;
+    let absent_login = data(absent_login).await;
+    assert_eq!(wrong["error"]["code"], absent_login["error"]["code"]);
+    assert_eq!(wrong["error"]["message"], absent_login["error"]["message"]);
+    let reset = send(
+        &client,
+        "POST",
+        "/auth/password/reset-request",
+        r#"{"email":"first@example.com"}"#,
+        None,
+    )
+    .await;
+    let absent = send(
+        &client,
+        "POST",
+        "/auth/password/reset-request",
+        r#"{"email":"absent@example.com"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(reset.status(), absent.status());
+    assert_eq!(data(reset).await, data(absent).await);
+    let jobs: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM kouga_jobs WHERE name = 'auth.password_reset'")
+            .fetch_one(isolated.db())
+            .await
+            .unwrap();
+    assert_eq!(jobs, 1);
+    // The worker sends the clear token by SMTP; the DB keeps only its digest.
+    let reset_token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    sqlx::query("INSERT INTO kouga_password_resets(token_hash,user_id,expires_at) VALUES ($1,$2,now() + interval '30 minutes')")
+        .bind(Sha256::digest(reset_token.as_bytes()).to_vec()).bind(id).execute(isolated.db()).await.unwrap();
+    let input = format!(r#"{{"token":"{reset_token}","password":"new correct password"}}"#);
+    let (first, second) = tokio::join!(
+        send(&client, "POST", "/auth/password/reset", &input, None),
+        send(&client, "POST", "/auth/password/reset", &input, None),
+    );
+    let statuses = [first.status(), second.status()];
+    assert!(statuses.contains(&StatusCode::NO_CONTENT));
+    assert!(statuses.contains(&StatusCode::UNPROCESSABLE_ENTITY));
+    assert_eq!(
+        send(&client, "GET", "/auth/me", "", Some(&token))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let login = send(
+        &client,
+        "POST",
+        "/auth/login",
+        r#"{"email":"first@example.com","password":"new correct password"}"#,
+        None,
+    )
+    .await;
+    assert_eq!(login.status(), StatusCode::OK);
+    let new_token = data(login).await["data"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        send(&client, "POST", "/auth/logout", "", Some(&new_token))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        send(&client, "GET", "/auth/me", "", Some(&new_token))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for _ in 0..5 {
+        let _ = send(
+            &client,
+            "POST",
+            "/auth/login",
+            r#"{"email":"limited@example.com","password":"wrong password"}"#,
+            None,
+        )
+        .await;
+    }
+    assert_eq!(
+        send(
+            &client,
+            "POST",
+            "/auth/login",
+            r#"{"email":"limited@example.com","password":"wrong password"}"#,
+            None
+        )
+        .await
+        .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(id)
+        .execute(isolated.db())
+        .await
+        .unwrap();
+    let tokens: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM kouga_auth_tokens WHERE user_id = $1")
+            .bind(id)
+            .fetch_one(isolated.db())
+            .await
+            .unwrap();
+    assert_eq!(tokens, 0);
+    drop(client);
+    isolated.close().await.unwrap();
+}

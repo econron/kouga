@@ -1,0 +1,166 @@
+use APP_CRATE::auth_mail::SendPasswordReset;
+use kouga_mailer::{MailMessage, SmtpMailer};
+use kouga_model::{Db, Uuid, sqlx};
+use kouga_worker::{JobContext, JobError, Worker, WorkerOptions};
+use sha2::{Digest, Sha256};
+use std::{sync::Arc, time::Duration};
+
+struct State {
+    db: Db,
+    mailer: SmtpMailer,
+    from: String,
+    reset_url: String,
+}
+
+async fn send(job: SendPasswordReset, ctx: JobContext<State>) -> Result<(), JobError> {
+    let state = &ctx.state;
+    let email: Option<String> = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(job.user_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| JobError::Retryable("user lookup failed"))?;
+    let Some(email) = email else {
+        return Ok(());
+    };
+    let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    let digest = Sha256::digest(token.as_bytes()).to_vec();
+    sqlx::query("INSERT INTO kouga_password_resets(token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '30 minutes')")
+        .bind(digest).bind(job.user_id).execute(&state.db).await
+        .map_err(|_| JobError::Retryable("reset token creation failed"))?;
+    let text = format!(
+        "Reset your password: {}?token={}\nThis link expires in 30 minutes.\n",
+        state.reset_url, token
+    );
+    let message = MailMessage::new(&state.from, &email, "Password reset", text)
+        .map_err(|_| JobError::Permanent("invalid reset email"))?;
+    message
+        .deliver(&state.mailer)
+        .await
+        .map_err(|_| JobError::Retryable("reset mail delivery failed"))
+}
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = kouga_model::db::connect(&std::env::var("DATABASE_URL")?, 5, Duration::from_secs(5))
+        .await?;
+    let host = std::env::var("KOUGA_SMTP_HOST")?;
+    let port = std::env::var("KOUGA_SMTP_PORT")
+        .ok()
+        .map(|s| s.parse())
+        .transpose()?
+        .unwrap_or(465);
+    let credentials = match (
+        std::env::var("KOUGA_SMTP_USER"),
+        std::env::var("KOUGA_SMTP_PASSWORD"),
+    ) {
+        (Ok(user), Ok(password)) => Some(kouga_mailer::Credentials::new(user, password)),
+        (Err(_), Err(_)) => None,
+        _ => return Err("both KOUGA_SMTP_USER and KOUGA_SMTP_PASSWORD are required".into()),
+    };
+    let mailer = if std::env::var("KOUGA_ENV").as_deref() == Ok("test")
+        && host == "127.0.0.1"
+        && std::env::var("KOUGA_SMTP_LOCAL").as_deref() == Ok("1")
+        && credentials.is_none()
+    {
+        SmtpMailer::insecure_local(port)
+    } else {
+        SmtpMailer::relay(&host, port, credentials)?
+    };
+    let state = Arc::new(State {
+        db: db.clone(),
+        mailer,
+        from: std::env::var("KOUGA_MAIL_FROM")?,
+        reset_url: std::env::var("KOUGA_RESET_URL")?,
+    });
+    let mut options = WorkerOptions::default();
+    options.queues = vec!["mail".into()];
+    let mut worker = Worker::new(db, state, options)?;
+    worker.register::<SendPasswordReset>(send)?;
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    if std::env::args().any(|arg| arg == "--once") {
+        worker
+            .run_once(1, Duration::from_secs(30), cancellation)
+            .await?;
+    } else {
+        worker.run_forever(cancellation).await?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kouga_test::TestDb;
+    use std::io::{BufRead, BufReader, Write};
+
+    #[tokio::test]
+    async fn reset_handler_delivers_smtp_and_stores_only_a_digest() {
+        if std::env::var("TEST_DATABASE_URL").is_err() {
+            return;
+        }
+        let isolated = TestDb::from_env("migrations").await.unwrap();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO users(id,email,password_hash) VALUES ($1,'receiver@example.test','unused')")
+            .bind(id).execute(isolated.db()).await.unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let smtp = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            socket.write_all(b"220 local SMTP\r\n").unwrap();
+            let mut read = BufReader::new(socket.try_clone().unwrap());
+            let mut lines = Vec::new();
+            loop {
+                let mut line = String::new();
+                if read.read_line(&mut line).unwrap() == 0 {
+                    break;
+                }
+                lines.push(line.clone());
+                if line.starts_with("EHLO") {
+                    socket.write_all(b"250 local\r\n").unwrap();
+                } else if line.starts_with("MAIL FROM:") || line.starts_with("RCPT TO:") {
+                    socket.write_all(b"250 OK\r\n").unwrap();
+                } else if line.starts_with("DATA") {
+                    socket.write_all(b"354 go\r\n").unwrap();
+                } else if line == ".\r\n" {
+                    socket.write_all(b"250 accepted\r\n").unwrap();
+                    break;
+                }
+            }
+            lines.concat()
+        });
+        let state = Arc::new(State {
+            db: isolated.db().clone(),
+            mailer: SmtpMailer::insecure_local(port),
+            from: "sender@example.test".into(),
+            reset_url: "https://example.test/reset".into(),
+        });
+        send(
+            SendPasswordReset { user_id: id },
+            JobContext {
+                state: state.clone(),
+                job_id: Uuid::new_v4(),
+                attempt: 1,
+                cancellation: tokio_util::sync::CancellationToken::new(),
+            },
+        )
+        .await
+        .unwrap();
+        let wire = smtp.join().unwrap();
+        assert!(wire.contains("MAIL FROM:"));
+        assert!(wire.contains("RCPT TO:"));
+        assert!(wire.contains("Reset your password:"));
+        let digests: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT token_hash FROM kouga_password_resets WHERE user_id = $1")
+                .bind(id)
+                .fetch_all(isolated.db())
+                .await
+                .unwrap();
+        assert_eq!(digests.len(), 1);
+        assert_eq!(digests[0].len(), 32);
+        drop(state);
+        isolated.close().await.unwrap();
+    }
+}

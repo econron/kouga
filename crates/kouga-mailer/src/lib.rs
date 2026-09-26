@@ -5,10 +5,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+pub use lettre::transport::smtp::authentication::Credentials;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
     message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType},
-    transport::smtp::authentication::Credentials,
 };
 use minijinja::{AutoEscape, Environment};
 use serde::Serialize;
