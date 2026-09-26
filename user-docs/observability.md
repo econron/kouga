@@ -22,7 +22,7 @@ OpenTelemetryは、こうした情報を収集して外部へ送るための仕�
 tracing::info!(operation = "task.create", "タスクを作成しました");
 ```
 
-Kougaでは`tracing`のログを、標準の構造化ログへ載せる設計です。リクエスト処理中ならrequest ID、ジョブ処理中ならjob IDを関連付けます。独自のloggerを作ってcontrollerへ渡し回す必要はありません。
+Kougaでは`tracing`のログを標準の構造化ログへ載せます。リクエスト処理中ならrequest ID、ジョブ処理中ならjob IDを関連付けます。独自のloggerを作ってcontrollerへ渡し回す必要はありません。
 
 トークンやRequest全体をそのまま記録せず、調査に必要な項目を選んで書きます。
 
@@ -63,7 +63,7 @@ workerは別のターミナル・環境で、別のサービス名にします�
 ```sh
 export OTEL_SERVICE_NAME=taskboard-worker
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-kouga worker --queue mail
+kouga worker --queue default
 ```
 
 依存を追加したため、本番用のDockerイメージは再ビルドします。OTelを含まない既存イメージに環境変数を渡すだけでは有効になりません。
@@ -122,6 +122,6 @@ export OTEL_LOGS_EXPORTER=otlp
 
 送信先が停止しても、APIやジョブの業務処理は継続します。計測データにはバッファと送信時間の上限を設けるため、取りこぼしはあり得ます。欠落できない監査履歴は、業務データとして別に保存してください。
 
-ワンショット終了時には送信を待つ処理を入れます。Lambdaでも呼び出し終了前に送信する設計にし、プロセスが終了するまで待つことはありません。
+ワンショット終了時には送信を待つ処理を入れます。Lambda HTTP adapterでも呼び出し終了前に残り時間内でflushを試みます。強制終了時の配送は保証しません。
 
 **[デプロイのガイドへ](deployment.md)** · **[ガイドの入口へ](README.md)**

@@ -2,23 +2,13 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。`#[derive(Model)]`と関連/preloadは実装済みですが、アプリ生成例は後続タスクで整えます。
+> `generate model`と`generate resource`、`#[derive(Model)]`、関連/preloadは実装済みです。関連の外部キーmigrationとAPIへの公開は手動で行います。
 
-現時点の型付きqueryは次の形で使えます。列名は`Model::COLUMNS`の許可リストで照合され、値はSQLxでbindします。
+生成されたmodelの型付きqueryは次の形です。列名はderiveが生成した許可リストで照合され、値はSQLxでbindします。
 
 ```rust
-#[derive(sqlx::FromRow)]
-struct Project { id: Uuid, name: String }
-
-impl kouga_model::Model for Project {
-    const TABLE: &'static str = "projects";
-    const COLUMNS: &'static [&'static str] = &["id", "name"];
-    fn id(&self) -> Uuid { self.id }
-}
-
-let name = kouga_model::Column::<Project, String>::new("name");
-let rows = kouga_model::Query::<Project>::new()
-    .filter(name.eq("Kouga".to_owned()))
+let rows = Project::query()
+    .filter(project::columns::name.eq("Kouga".to_owned()))
     .fetch_all(&db).await?;
 ```
 
@@ -74,8 +64,8 @@ idと作成・更新日時を、毎回手で設定する必要はありません
 
 ```rust
 let tasks = Task::query()
-    .filter(Task::completed.eq(false))
-    .order_by(Task::created_at.desc())
+    .filter(task::columns::completed.eq(false))
+    .order_by(task::columns::created_at.desc())
     .limit(20)
     .fetch_all(&db)
     .await?;

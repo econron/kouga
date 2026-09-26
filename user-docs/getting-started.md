@@ -2,15 +2,15 @@
 
 [← ガイドの入口](README.md)
 
-> Kouga CLIはまだ配布されていません。以下はローカルcheckoutからCLIをビルドして試せるプレビューです。
+> Kouga CLIはまだ配布されていません。以下はローカルcheckoutで実行確認した開発版の手順です。
 
-リポジトリ内で`cargo build -p kouga-cli`を実行し、`target/debug/kouga`をPATHに入れてください。生成アプリはローカルのKougaソースへのpath依存を持ちます。gRPCの入口追加にはビルド時の`protoc`も必要です。
+Kougaリポジトリで`cargo +1.94.0 build -p kouga-cli --locked`を実行し、`target/debug`をPATHに追加してください。生成アプリは、そのCLIをビルドしたKouga checkoutへの絶対path依存を持ちます。checkoutを移動したら依存pathを更新してください。gRPCの入口追加には`protoc`も必要です。
 
 タスクを登録して、一覧を取得するAPIを作ります。このガイドでは、まずローカルで動く一周を体験します。
 
 ## 準備するもの
 
-Rust、PostgreSQL、Kouga CLIを使用します。Rustの対応バージョンとCLIのインストール方法はリリース時に案内します。ここではPostgreSQLが起動しており、開発用DBを作成できるユーザーがある前提です。
+Rust 1.94.0、PostgreSQL、Kouga CLIを使用します。ここではPostgreSQLが起動しており、開発用DBを作成できるユーザーがある前提です。
 
 ## アプリを作る
 
@@ -56,13 +56,13 @@ kouga server
 起動時の案内例です。
 
 ```text
-Kouga · development
-API       http://localhost:3000
-Docs      http://localhost:3000/docs
-OpenAPI   openapi.yml updated
+Updated openapi.yml
+Kouga HTTP listening on 127.0.0.1:3000
+Docs       http://127.0.0.1:3000/docs
+OpenAPI    http://127.0.0.1:3000/openapi.yml
 ```
 
-`http://localhost:3000/docs`で、生成されたAPIの入力項目とレスポンスを確認できます。
+`http://localhost:3000/docs`で、生成されたAPIの入力項目とレスポンスを確認できます。`KOUGA_ENV=production`では/docsと/openapi.ymlを公開せず、起動時の自動生成もしません。
 
 ## タスクを登録する
 
@@ -79,7 +79,7 @@ curl -i http://localhost:3000/tasks \
 ```json
 {
   "data": {
-    "id": "9ba138ba-7e51-4dc0-9aa0-e1ea87366dd2",
+    "id": "60693cf1-f023-433e-9152-5bd4f6ee1290",
     "title": "KougaでAPIを作る",
     "completed": false
   }
@@ -155,10 +155,11 @@ router
 
 ## テストする
 
-生成されたリクエストテストは、テスト専用DBを使用します。開発用とは別の接続先を設定して実行します。
+生成されたリクエストテストは、テスト専用DBを使用します。開発用とは別の接続先を設定して実行します。`TEST_DATABASE_URL`がない場合はDBを使うテストがスキップされます。
 
 ```sh
 export TEST_DATABASE_URL='postgresql://app:password@localhost:5432/taskboard_test'
+DATABASE_URL="$TEST_DATABASE_URL" kouga db create
 cargo test
 ```
 

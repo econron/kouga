@@ -8,9 +8,9 @@ Kougaは、APIアプリケーションのためのRustフレームワークで�
 
 **外部向けのHTTP/JSONも、サービス間のgRPC/Protobufも、一つのプロジェクトで。** 業務処理とmodelを共有し、入口ごとに小さなイメージとして配備できます。
 
-> **ドキュメント・プレビュー** — Kougaは設計中です。このディレクトリのコマンド・コード・出力は、目指す利用体験を検討するための案です。現在実行できる製品や、提供済みの機能を示すものではありません。
+> **ローカル開発版** — CLIはこのリポジトリからビルドして試せます。パッケージ配布・安定版はまだありません。以下の短い例は実装済みですが、応用例には手動実装が必要な箇所があります。[通しの実行手順](tutorial.md)に検証済み範囲をまとめました。
 
-**[最初のAPIを作る →](getting-started.md)** · [設計中のこと](preview.md)
+**[最初のAPIを作る →](getting-started.md)** · [通しの実行手順](tutorial.md) · [現状と制限](preview.md)
 
 ### 最初に、動く一周を。
 
@@ -48,22 +48,23 @@ pub struct CreateTaskRequest {
 ```rust
 let task = Task::find(&db, task_id).await?;
 let tasks = Task::query()
-    .filter(Task::completed.eq(false))
-    .order_by(Task::id.asc())
+    .filter(task::columns::completed.eq(false))
+    .order_by(task::columns::id.asc())
     .limit(20)
     .fetch_all(&db)
     .await?;
 ```
 
-関連を読むときも、トランザクションを使うときも、DBへアクセスする場所がコードに現れます。migrationはSQL。普段の操作をmodelで書き、細かな制御が必要なところではSQLを使えます。
+関連を読むときも、トランザクションを使うときも、DBへアクセスする場所がコードに現れます。migrationはSQL。普段の操作をmodelで書き、細かな制御が必要なところではSQLを使えます。上のRust例は生成コードの関心部分の抜粋です。
 
 **[データと関連を扱う →](models.md)** · **[DBを変更する →](migrations.md)**
 
 ### メールはworkerへ。HTTPは身軽に。
 
 ```sh
-docker build --target http -t taskboard-http .
-docker build --target worker -t taskboard-worker .
+kouga dockerfile
+docker build --build-context kouga=/path/to/kouga --target http -t taskboard-http .
+docker build --build-context kouga=/path/to/kouga --target worker -t taskboard-worker .
 ```
 
 同じリポジトリから、役割ごとにイメージを作れます。HTTP側が必要とするのはジョブの引数と投入処理。SMTPやメールテンプレートは、送信を担当するworker側に置きます。
@@ -97,6 +98,7 @@ middleware → Requestの検証 → controller → model
 | やりたいこと | 読むページ |
 |---|---|
 | APIを作り、リクエストを送る | [最初のAPI](getting-started.md) |
+| 新規ディレクトリから機能を順に試す | [通しの実行手順](tutorial.md) |
 | HTTPとgRPCを同じプロジェクトで提供する | [HTTPとgRPCの同居](http-and-grpc.md) |
 | 必須項目・独自ルール・PATCHを扱う | [Requestとvalidation](requests.md) |
 | CRUD・関連・トランザクションを使う | [Model](models.md) |

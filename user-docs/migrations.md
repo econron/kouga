@@ -2,9 +2,9 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。SQLを標準にする案と、CLIの利用体験を示しています。Kougaのコマンドは未実装です。
+> `generate migration`、`db create`、`db migrate`、`db status`はローカルCLIで利用できます。rollback/repair/schema/seedのCLIコマンドはまだありません。
 
-現在の管理APIは`kouga-migration`から利用できます。CLIへの接続は開発中です。SQLひな形生成APIはupのみを作り、可逆な場合のdownは手動で追加します。schema出力にはシステムの`pg_dump`が必要です（PostgreSQL 17に対する`pg_dump` 18.3で検証）。
+`kouga-migration`の低レベルAPIにはrollbackやschema出力もありますが、現在のCLIには接続されていません。schema出力にはシステムの`pg_dump`が必要です。
 
 migrationには、DBへ何を変更するかを書きます。Kougaは適用順と履歴を管理し、PostgreSQLのSQLを実行します。
 
@@ -68,13 +68,7 @@ Requestで事前確認しても、並行した登録は起こり得ます。最�
 
 ## 戻す・修正する
 
-直前の一つを戻す操作です。
-
-```sh
-kouga db rollback --steps 1
-```
-
-downがない、または空の場合は不可逆として拒否します。適用済みファイルを書き換えるとchecksumの不一致を検知します。共有環境へ適用した変更は、新しいmigrationで修正してください。
+CLIに`db rollback`はありません。生成されるdown SQLは手動でレビューするためのひな形です。適用済みファイルを書き換えるとchecksumの不一致を検知します。共有環境へ適用した変更は、新しいmigrationで修正してください。
 
 ## トランザクションに入れられない変更
 
@@ -85,18 +79,11 @@ downがない、または空の場合は不可逆として拒否します。適�
 CREATE INDEX CONCURRENTLY tasks_created_at_idx ON tasks (created_at);
 ```
 
-この形式の途中失敗では、DBに変更の一部が残ることがあります。Kougaはdirty状態として後続を停止します。`db status`で対象を確認し、DBの実際の状態を修復してから、`db repair`で履歴を揃えます。
-
-`repair`はSQLを再実行するコマンドではありません。対象versionと修復後の状態を指定する管理操作です。詳細な復旧手順は実装時に整備します。
+この形式の途中失敗では、DBに変更の一部が残ることがあります。Kougaはdirty状態として後続を停止します。`db status`で対象を確認し、バックアップと履歴を参照してDBの実際の状態を修復してください。CLIに`db repair`はありません。
 
 ## schemaとseed
 
-```sh
-kouga db schema
-kouga db seed
-```
-
-`schema`は現在の構造を`db/schema.sql`へ出力します。`seed`は登録した初期データ投入処理を実行します。migrationがテーブル構造の履歴、seedが初期データ、という役割分担です。
+`kouga db schema`と`kouga db seed`は未実装です。初期データはアプリの`src/bin/task-<name>.rs`に処理を書き、`kouga runner <name>`で実行できます。migrationはテーブル構造の履歴、runnerは任意のバッチ処理です。
 
 本番へのmigrationは、HTTPサーバーの起動と分けて一度実行します。列を削除するような変更では、先にその列を使わないアプリを配備するなど、更新順序も考慮してください。
 

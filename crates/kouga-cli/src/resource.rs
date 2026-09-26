@@ -510,7 +510,7 @@ fn app_lib(old: &str, plural: &str, first: bool, resource: bool) -> Result<Strin
             text = text.replace("// kouga: resource routes\n", &format!("let router = controllers::{plural}::routes(router);\n    // kouga: resource routes\n"));
         }
         if let Some(snippet) = super::api::greeting_snippet(old) {
-            text = text.replacen("    router\n}", &format!("{snippet}    router\n}}"), 1);
+            text = text.replacen("    router\n}", &format!("{snippet}}}"), 1);
         }
         return Ok(text);
     }
@@ -615,8 +615,10 @@ fn controller(name: &str, singular: &str, plural: &str, fields: &[Field]) -> Str
             field.name, field.name
         ));
         create_fields.push_str(&format!(
-            "            {}: input.{}.clone(),\n",
-            field.name, field.name
+            "            {}: input.{}{},\n",
+            field.name,
+            field.name,
+            if field.ty == "String" { ".clone()" } else { "" }
         ));
         update_fields.push_str(&format!(
             "            {}: input.{}.clone(),\n",

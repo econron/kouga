@@ -1,56 +1,27 @@
-# このプレビューについて
+# 開発版の現在地
 
 [← ガイドの入口](README.md)
 
-このドキュメントは、Kougaを実装する前に、利用者が触るコマンド・コード・結果を具体化した叩き台です。製品のリリース告知や、実行検証済みのチュートリアルではありません。
+Kougaはローカルcheckoutからビルドして試せる開発版です。crate・CLIの配布、安定性保証、性能値、実クラウド配備の検証はまだありません。記載の型・コマンドは、[通しの実行手順](tutorial.md)で実物と照合した範囲と、低レベルcrateの実装を分けて説明します。
 
-T01の[共通API契約](../docs/api-contracts.md)で、Request・model・関連取得・middleware・ジョブ・依存境界を具体化しました。レビュー承認済みの実装基準であり、提供済み機能ではありません。以下の未確定項目は、同契約で扱った範囲については実装検証待ちに進んでいます。
-
-本文は提供時の使い方を想像しやすいように書いていますが、Kouga固有のコマンド、derive、属性、型、メソッド、レスポンス例はすべて提案です。crateのインストールコマンドは、未公開のパッケージを案内しないため掲載していません。
-
-## この順番で読んでみる
-
-1. [入口](README.md)：何ができて、なぜ使いたいのかが伝わるか。
-2. [最初のAPI](getting-started.md)：最初に何をすればよいか、迷わないか。
-3. [Request](requests.md)：標準ルールと普通の関数だけで書きたい条件を表せるか。
-4. [Model](models.md)と[Migration](migrations.md)：読み書き・関連・schema変更が自然か。
-5. [認証](auth-and-middleware.md)：保護する範囲とデータの権限を理解できるか。
-6. [ジョブ](jobs-and-mail.md)と[デプロイ](deployment.md)：小さく始め、必要な処理だけ別イメージにできるか。
-7. [ログとOpenTelemetry](observability.md)：普段のログ記述から、サービスをまたぐ調査へ無理なく進めるか。
-8. [HTTPとgRPCの同居](http-and-grpc.md)：同じ業務コードから二つの入口を提供し、別々に配備できることが伝わるか。
-
-## 今回、使い心地を確かめるために具体化したもの
-
-| 提案したインターフェース | 判断したいこと |
+| 項目 | 現在の状態 |
 |---|---|
-| `title:string completed:bool=false` | 生成時の型と既定値の指定が読めるか |
-| 起動時にAPI・Docs・OpenAPIの場所を表示 | 次の操作へすぐ移れるか |
-| `Validated<T>`と`Patch<T>` | 安全性に対して新しい概念が多すぎないか |
-| `NewTask`・`UpdateTask`の生成 | 書く量を減らしながら入力とDBの責務を分けられるか |
-| `Task::query().filter(...).fetch_all(...)` | 普段の検索が十分短いか |
-| `bearer_auth(auth::require_user)` | 認証とOpenAPIの宣言を一か所に置けるか |
-| Jobの契約＋普通のhandler関数 | イメージ分離のための負担として納得できるか |
-| `worker --once` | ワンショットタスクとしての意味が伝わるか |
-| `kouga add otel`＋標準環境変数 | 導入操作を一度行い、送り先を設定するだけで使えるか |
-| `kouga add grpc` / `kouga add http` | 入口を排他的に選ばず、後から追加できるか |
+| HTTP CRUD、Request検証、OpenAPI | generatorと実PostgreSQLで動作確認済み |
+| 認証、queue、mailer、worker | generator・実DB・SMTP結合テストあり。独自ジョブの実処理は利用者が書く |
+| model association | deriveとpreload APIあり。外部キーmigrationと利用側コードは手動 |
+| 添付 | `kouga-storage`の低レベルAPIあり。添付HTTP routeのgeneratorなし |
+| WebSocket | `kouga-channel`と拒否を既定にした別バイナリを生成。policyは手動 |
+| gRPC | Greetingのunaryサンプルを別packageで生成。任意の業務RPCは手動 |
+| OTel | `add otel`で標準HTTP/workerに追加。独自gRPCバイナリは手動 |
+| Docker | `dockerfile`で役割別targetを生成。BuildKit named contextに同じKouga checkoutが必要 |
+| Cloud Run/ECS/Lambda | 実行条件とLambda HTTP adapterを用意。実クラウドへのpush/deployは未検証 |
 
-これらの構文は今回のドキュメント用の案です。既存の[内部仕様書](../docs/specification.md)にある責務・要件をもとにしていますが、この案を書いたことで公開APIが確定したとは扱いません。
+## まだないCLI機能
 
-## まだ詰めるところ
+`kouga db rollback`、`kouga db repair`、`kouga db schema`、`kouga db seed`はありません。`kouga generate storage`もありません。ドキュメント中の抜粋コードは、明記のない限り完全なアプリを自動生成する意味ではありません。
 
-- CLIの配布方法、Rustの対応バージョン、依存crate。
-- gRPCの生成手順、handlerの型、入力検証・認証との接続、streamingの対応範囲。同一プロジェクトでのHTTP/gRPC併用は確定方針。
-- Requestとmodelの属性名や生成型の最終形。
-- generatorが作るimport・module登録を含む、完全なコード。
-- preload結果の型とアクセス方法。
-- テスト専用DBの設定名・構築手順。本文の`TEST_DATABASE_URL`は案。
-- メール設定名、テンプレートの書式、ローカルでの確認方法。
-- ワンショットのオプション、Lambda用の入口、Dockerのベース。
-- キャッシュ、ストレージ、WebSocketの詳しい利用ガイド。
-- OTelの対応SDK・環境変数、導入コマンドの対象選択、独自メトリクスと起動処理の拡張API。
+## 先に試すなら
 
-## 実装の受け入れ基準にする
+[最初のAPI](getting-started.md)でCRUDを動かし、[通しの実行手順](tutorial.md)で認証・worker・gRPCまで進めてください。現在の制限を確認したうえで、機能別ガイドを参照できます。
 
-公開前には、チュートリアルを新しいディレクトリから実行し、記載したコマンド・生成ファイル・JSON・エラーが実物と一致することを確認します。Rustのコード例も、生成アプリのテストでコンパイル・実行します。
-
-今はMarkdownの叩き台だけです。GitHubリポジトリの作成、push、GitHub Pagesの設定・デプロイは行いません。内容を判断してから、見せ方と公開手順へ進みます。
+GitHub Pages公開、クラウド配備、レジストリへのpushは、このドキュメントの検証では行っていません。
