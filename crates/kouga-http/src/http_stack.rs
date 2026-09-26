@@ -16,6 +16,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 use tokio::time::{Instant, Sleep};
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
+use tracing::Instrument;
 
 pub(crate) fn apply<S>(
     app: axum::Router,
@@ -127,7 +128,24 @@ where
     let no_cors = options.cors_origins.is_empty();
     app.layer(from_fn(move |mut request: Request, next: axum::middleware::Next| {
         let trusted = options.trusted_proxies.clone();
+        let trusted_trace_peers = options.trusted_trace_peers.clone();
         async move {
+            let method = request.method().clone();
+            let span = tracing::info_span!("kouga.http.request", http.request.method = %method);
+            #[cfg(feature = "otel")]
+            if request.extensions().get::<ConnectInfo<SocketAddr>>().is_some_and(|peer| trusted_trace_peers.contains(&peer.0.ip()))
+                && request.headers().get_all("traceparent").iter().count() == 1
+                && request.headers().get_all("tracestate").iter().count() <= 1
+            {
+                kouga_telemetry::propagation::extract(
+                    request.headers().get("traceparent").and_then(|value| value.to_str().ok()),
+                    request.headers().get("tracestate").and_then(|value| value.to_str().ok()),
+                    &span,
+                );
+            }
+            #[cfg(not(feature = "otel"))]
+            let _ = trusted_trace_peers;
+            async move {
             let id = RequestId(uuid::Uuid::new_v4().to_string());
             let denied_preflight = request.method() == Method::OPTIONS
                 && request.headers().contains_key(header::ORIGIN)
@@ -157,6 +175,7 @@ where
             response.headers_mut().insert("x-request-id", HeaderValue::from_str(&id.0).expect("UUID header"));
             tracing::info!(request_id = %id, method = %method, path, status = response.status().as_u16(), duration_ms = started.elapsed().as_millis() as u64, client_ip = ?client_ip, "HTTP request");
             response
+            }.instrument(span).await
         }
     }))
 }

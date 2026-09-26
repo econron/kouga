@@ -1,0 +1,23 @@
+[package]
+name = "kouga-channel"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { version = "=0.8.9", default-features = false, features = ["ws", "json", "query"] }
+futures-util = "=0.3.34"
+kouga-auth = { path = "../kouga-auth" }
+kouga-db = { path = "../kouga-db" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "=0.10.9"
+sqlx = { version = "=0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "uuid"] }
+tokio = { version = "=1.53.1", features = ["macros", "rt", "sync", "time"] }
+uuid = { version = "=1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+kouga-test = { path = "../kouga-test" }
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net"] }
+tokio-tungstenite = "=0.29.0"

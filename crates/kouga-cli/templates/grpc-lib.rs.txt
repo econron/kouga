@@ -1,0 +1,45 @@
+pub use app_rpc::rpc;
+
+#[derive(Clone)]
+pub struct Greeting {
+    inflight: kouga_grpc::InFlight,
+}
+
+impl Default for Greeting {
+    fn default() -> Self {
+        Self {
+            inflight: kouga_grpc::InFlight::new(128),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl rpc::greeting_server::Greeting for Greeting {
+    async fn greet(
+        &self,
+        request: tonic::Request<rpc::GreetRequest>,
+    ) -> Result<tonic::Response<rpc::GreetReply>, tonic::Status> {
+        let _permit = self.inflight.try_acquire()?;
+        let name = request.into_inner().name;
+        if name.trim().is_empty() {
+            return Err(tonic::Status::invalid_argument("name is required"));
+        }
+        kouga_grpc::within_deadline(std::time::Duration::from_secs(5), async move {
+            Ok(tonic::Response::new(rpc::GreetReply {
+                message: app_domain::greet(&name),
+            }))
+        })
+        .await
+    }
+}
+
+pub async fn greet_client(
+    client: &mut rpc::greeting_client::GreetingClient<tonic::transport::Channel>,
+    name: String,
+) -> Result<String, tonic::Status> {
+    client
+        .greet(rpc::GreetRequest { name })
+        .await
+        .map_err(kouga_grpc::normalize_client_timeout)
+        .map(|response| response.into_inner().message)
+}

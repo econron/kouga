@@ -9,6 +9,7 @@ use serde_json::Value;
 use sqlx::FromRow;
 use tokio::{task::JoinSet, time::Instant};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use uuid::Uuid;
 
 type JobFuture = Pin<Box<dyn Future<Output = Result<(), JobError>> + Send>>;
@@ -174,6 +175,10 @@ struct Claimed {
     payload: Value,
     attempt: i32,
     lease_token: Uuid,
+    #[cfg(feature = "otel")]
+    traceparent: Option<String>,
+    #[cfg(feature = "otel")]
+    tracestate: Option<String>,
 }
 
 pub struct Worker<S> {
@@ -315,9 +320,16 @@ impl<S: Send + Sync + 'static> Worker<S> {
                         let options = self.options.clone();
                         let handlers = handlers.clone();
                         let job_stop = stop.child_token();
-                        tasks.spawn(async move {
-                            process(db, state, handlers, options, job, job_stop).await
-                        });
+                        let span = tracing::info_span!("kouga.job.run", job.kind = %job.name, job.id = %job.id, job.attempt = job.attempt);
+                        #[cfg(feature = "otel")]
+                        kouga_telemetry::propagation::link(
+                            job.traceparent.as_deref(),
+                            job.tracestate.as_deref(),
+                            &span,
+                        );
+                        tasks.spawn(
+                            process(db, state, handlers, options, job, job_stop).instrument(span),
+                        );
                         continue;
                     }
                 }
@@ -425,7 +437,7 @@ async fn claim(db: &Db, options: &WorkerOptions) -> Result<Option<Claimed>, Work
         .map_err(|_| WorkerError::InvalidConfig("lease duration"))?;
     sqlx::query("UPDATE kouga_jobs SET status='dead', failure_reason='lease expired after maximum attempts', lease_token=NULL, lease_until=NULL, updated_at=now() WHERE queue=ANY($1) AND status='running' AND lease_until<=now() AND attempt >= $2")
         .bind(&options.queues).bind(options.max_attempts).execute(db).await?;
-    Ok(sqlx::query_as("WITH candidate AS (SELECT id FROM kouga_jobs WHERE queue = ANY($1) AND ((status='pending' AND available_at<=now()) OR (status='running' AND lease_until<=now())) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE kouga_jobs j SET status='running', attempt=j.attempt+1, lease_token=gen_random_uuid(), lease_until=now()+($2::bigint * interval '1 millisecond'), updated_at=now() FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.name,j.version,j.payload,j.attempt,j.lease_token")
+    Ok(sqlx::query_as("WITH candidate AS (SELECT id FROM kouga_jobs WHERE queue = ANY($1) AND ((status='pending' AND available_at<=now()) OR (status='running' AND lease_until<=now())) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE kouga_jobs j SET status='running', attempt=j.attempt+1, lease_token=gen_random_uuid(), lease_until=now()+($2::bigint * interval '1 millisecond'), updated_at=now() FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.name,j.version,j.payload,j.attempt,j.lease_token,j.traceparent,j.tracestate")
         .bind(&options.queues).bind(lease_ms).fetch_optional(db).await?)
 }
 

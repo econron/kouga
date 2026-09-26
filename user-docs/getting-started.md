@@ -4,7 +4,7 @@
 
 > Kouga CLIはまだ配布されていません。以下はローカルcheckoutからCLIをビルドして試せるプレビューです。
 
-リポジトリ内で`cargo build -p kouga-cli`を実行し、`target/debug/kouga`をPATHに入れてください。生成アプリはローカルのKougaソースへのpath依存を持ちます。gRPC生成はまだ含まれません。
+リポジトリ内で`cargo build -p kouga-cli`を実行し、`target/debug/kouga`をPATHに入れてください。生成アプリはローカルのKougaソースへのpath依存を持ちます。gRPCの入口追加にはビルド時の`protoc`も必要です。
 
 タスクを登録して、一覧を取得するAPIを作ります。このガイドでは、まずローカルで動く一周を体験します。
 

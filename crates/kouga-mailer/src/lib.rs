@@ -137,6 +137,7 @@ impl MailMessage {
             .map_err(MailError::InvalidMessage)
     }
 
+    #[tracing::instrument(name = "kouga.mail.send", skip_all)]
     pub async fn deliver<M: Mailer>(&self, mailer: &M) -> Result<(), MailError> {
         mailer.deliver(self).await
     }

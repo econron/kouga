@@ -2,7 +2,7 @@
 
 [← ガイドの入口](README.md)
 
-> ドキュメント・プレビュー。`kouga-telemetry`による任意のOTLP送信は実装済みです。`kouga add otel`、HTTP・DB・worker等の標準計測と相互のtrace接続は後続タスクです。
+> ドキュメント・プレビュー。任意のOTLP送信と処理間trace接続は実装済みです。`kouga add otel`コマンドは未実装で、各バイナリへの組み込みが必要です。
 
 最初は標準出力のログで十分です。サービスが増えて「このリクエストから、どのジョブが動いたのか」「どこで時間がかかったのか」を知りたくなったら、OpenTelemetryを追加できます。
 
@@ -56,6 +56,8 @@ let telemetry = kouga_telemetry::Telemetry::init(
 telemetry.shutdown(std::time::Duration::from_secs(5)).await?;
 ```
 
+HTTP/queue/worker、gRPCを使うアプリは、それぞれのcrateの`otel` featureを明示的に有効化します。HTTPの受信contextは既定では信頼しません。`ConnectInfo<SocketAddr>`を付けて起動し、TCPの直接接続元IPを`HttpOptions::trusted_trace_peers`に指定した場合だけ親として使います。gRPCでは生成handlerの処理を`kouga_grpc::trace_request(request.metadata(), trusted_peer, async { /* 処理 */ }).await`で包み、`trusted_peer`を認証済みの通信経路から決めます。転送ヘッダーだけを根拠に信頼しないでください。`baggage`は伝播しません。
+
 workerは別のターミナル・環境で、別のサービス名にします。
 
 ```sh
@@ -70,7 +72,7 @@ kouga worker --queue mail
 
 ## まずは標準の計測を見る
 
-Kouga経由のHTTP・DB操作・ジョブ投入と実行・メール送信を計測します。HTTPとworkerを別イメージにしていても、ジョブに保存したtrace contextで関連をたどれます。
+Kouga経由のHTTP・modelによるDB操作・ジョブ投入と実行・メール送信を計測します。生SQLや任意の外部HTTPクライアントは自動計測対象外です。HTTPとworkerを別イメージにしていても、ジョブに保存したtrace contextで関連をたどれます。
 
 ```text
 HTTPの処理

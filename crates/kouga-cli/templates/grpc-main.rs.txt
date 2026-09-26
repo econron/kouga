@@ -1,0 +1,18 @@
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let address = std::env::var("KOUGA_GRPC_BIND")
+        .unwrap_or_else(|_| "127.0.0.1:50051".to_owned())
+        .parse()?;
+    println!("Kouga gRPC listening on {address}");
+    tonic::transport::Server::builder()
+        .layer(tower::util::MapResponseLayer::new(
+            kouga_grpc::normalize_message_size_status,
+        ))
+        .add_service(
+            app_grpc::rpc::greeting_server::GreetingServer::new(app_grpc::Greeting::default())
+                .max_decoding_message_size(4 * 1024 * 1024),
+        )
+        .serve(address)
+        .await?;
+    Ok(())
+}

@@ -1,0 +1,11 @@
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let name = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "Kouga".to_owned());
+    let url =
+        std::env::var("KOUGA_GRPC_URL").unwrap_or_else(|_| "http://127.0.0.1:50051".to_owned());
+    let mut client = app_grpc::rpc::greeting_client::GreetingClient::connect(url).await?;
+    println!("{}", app_grpc::greet_client(&mut client, name).await?);
+    Ok(())
+}

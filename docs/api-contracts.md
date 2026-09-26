@@ -306,6 +306,8 @@ mailerはlettreのMessage/SMTPを再利用し、MiniJinjaはHTML autoescapeを�
 
 T22の`kouga-mailer`公開APIは`MailMessage::new(from, to, subject, text)`、`html`、`attach(filename, ContentType, bytes)`、`deliver(&impl Mailer)`。`render_html(template, context)`はMiniJinjaで常にHTMLエスケープする。`SmtpMailer::relay`/`starttls`はTLSと証明書検証が必須で、平文は開発用`insecure_local(port)`のみ。`MemoryMailer::recorded()`で送信内容を外部送信なしに検査できる。HTTPからはmailer crateを参照せず、ジョブpayloadとqueueだけをリンクする。メール生成・送信はworkerのhandler内で行う。
 
+T25の`kouga-channel`は`Channel::start(db, Options, policy)`、`channel.router()`、`channel.issue_ticket(bearer)`、`channel.publish(actor, name, data)`を公開する。policyは`Fn(CurrentUser, Action, &str) -> bool`で、`Subscribe`/`Publish`を個別に許可する。HTTP側は`POST /_kouga/ws-ticket`（Bearer）と`GET /_kouga/ws`（WebSocket）を既存Routerへmergeする。ブラウザticketは`Sec-WebSocket-Protocol: kouga, kouga-ticket.<ticket>`で渡し、URLへ含めない。`Origin`完全一致、ticket一度限り、定期的なBearer有効性再確認を必須とする。通知はPostgreSQL `LISTEN/NOTIFY`による非永続best-effortで、再接続時はアプリのHTTP APIから状態を取り直す。SQLは認証migrationの後にchannel migrationを適用する。`axum`のws featureが追加されるが、workerへは依存させない。
+
 ## 10. 設定・起動・計測（T03の入口）
 
 `Config::load(root, Environment) -> Result<Config, ConfigError>`は既定→`config/base.toml`→`config/{environment}.toml`→環境変数の順に上書きする。`KOUGA_ENV`はdevelopment/test/production、既定development。未知キー、0上限、矛盾する設定は起動エラー。DATABASE_URL/同_FILEと秘密値の両指定は拒否。Secret<T>はDebug/Displayで秘匿し、明示的なexposeのみ許す。
@@ -331,6 +333,10 @@ runtime構築は同期mainで設定読込後に行い、Tokio multi_thread Build
 
 T26の`Telemetry::init(config)`はguardとproviderを保持し、`shutdown(deadline).await`を提供する。利用者providerも同じshutdown入口へ登録できる。SDK/exporterは独立crateだけに置く。OTEL_SERVICE_NAME/RESOURCE_ATTRIBUTES/EXPORTER_OTLP_ENDPOINT/HEADERS、TRACES_EXPORTER/METRICS_EXPORTER/LOGS_EXPORTER（otlp/none）、TRACES_SAMPLER（always_on/always_off/parentbased_traceidratio）とSAMPLER_ARGを初版対応とする。endpointなしでは送信なし、logsは明示有効化。OTLP/HTTP protobufのみ、queue metadataから各試行spanへlink、baggage既定無効。細かい送信上限はT26で追加してもT03の公開型を変更しない。
 
+T27ではHTTP/gRPC/queue/workerの`otel` featureが`kouga-telemetry`を任意追加する。HTTPは`HttpOptions::trusted_trace_peers`で直接TCP peerを明示したときだけtraceparent/tracestateを親として採用する。gRPCは生成handler内で`kouga_grpc::trace_request(metadata, trusted_peer, work)`を使う。queueは現在spanを既存のtrace metadata列へ自動保存し、workerは試行ごとの新規spanから投入spanへlinkする。`tracing` spanのasync伝播に`Instrument`を使い、workerバイナリは`run_once`後に`Telemetry::shutdown`を呼ぶ。生SQLや任意の外部HTTPクライアントは利用者が個別にspan/伝播を追加する。
+
+SQLxの汎用`Acquire<'c>`を使う公開modelの取得・CRUD・preloadとqueueのenqueue系は`impl Future + Send`を返す。これによりAxumの`Send` handler内でpool/transactionからそのまま`.await`でき、呼び出し記法は変わらない。
+
 ## 11. gRPCと生成コード
 
 `.proto`→tonic-prost-build（build依存のみ）→`crates/rpc`。handlerはtonic生成service traitを実装し、`tonic::Request<rpc::Input>`からmetadata認証→業務入力へTryFrom→共有validate→業務関数の順に呼ぶ。非同期DB認証を同期interceptorへ押し込まず、handler wrapperでawaitする。
@@ -352,6 +358,8 @@ CreateTaskInputはdomainの型でrpc/HTTPへ依存しない。公開auth lookup�
 PATCHは`.proto`のoptionalまたはoneofでpresenceを表す。nullable更新はoneofの「値/明示null」とoneof自体の不在をPatchへ変換する。scalar既定値から省略を推測しない。deadline/cancel/サイズ/過負荷とstatus変換を各RPCへ適用する。同一workspaceでHTTPと併用し、別binary/port/imageが標準。
 
 **T28の基盤API**: `kouga-grpc`は`require_bearer(metadata, db)`、`validate_input(input, context)`、`to_status(error)`、`InFlight::try_acquire()`、`within_deadline(limit, future)`を提供する。生成serviceごとにtonicの`max_decoding_message_size`を指定し、`Server::builder().layer(tower::util::MapResponseLayer::new(kouga_grpc::normalize_message_size_status))`でtonicの受信サイズ超過`OUT_OF_RANGE`を契約どおり`RESOURCE_EXHAUSTED`へ変換する。tonicクライアントが応答前に返すローカルtimeoutだけは`normalize_client_timeout(status)`で`DEADLINE_EXCEEDED`へ正規化する（T29のクライアント入口で適用）。`tracing` spanは認証・検証入口にある。`.proto`と`build.rs`はT29でアプリに生成する。
+
+**T29の生成構成**: `kouga new <name> --api grpc`、`kouga add grpc`、`kouga add http`で入口を選び、`kouga server [--api http|grpc]`で別々の実行ファイルを起動する。両方ある場合の既定はHTTP、gRPCのみならgRPC。HTTP-firstでは既存root packageを保ち、gRPC-firstではHTTPを`apps/http`に後付けする。共通関数は`crates/domain`、`.proto`から生成する型は`crates/rpc`、gRPC handlerは`apps/grpc`に置く。生成サンプルの`/greet/{name}`と`Greeting.Greet`は同じdomain関数を呼ぶ。gRPCのgenerated client入口は`normalize_client_timeout`を適用する。サンプルのGreetingは公開操作で、認証・DB・queue連携は利用者が業務操作ごとに実装する。Docker target生成はT31で扱う。
 
 ## 12. 実装への引き継ぎと並行作業
 

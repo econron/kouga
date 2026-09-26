@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T15・T17・T18・T20〜T24・T26・T28統合済み。T16・T25・T27は作業中
+状態: T00〜T18・T20〜T29統合済み。T19は作業中
 対象: 初版の全機能（35タスク）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -55,20 +55,20 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T13 | association・preload | T12 | 完了 |
 | T14 | OpenAPI生成と開発用Docs | T08、T09、T10 | 完了 |
 | T15 | CLI基盤と新規アプリ生成 | T03、T09 | 完了 |
-| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | レビュー待ち |
+| T16 | model・resource・Requestのgenerator | T06、T12、T14、T15、T17 | 完了 |
 | T17 | テスト支援基盤 | T04、T05、T09 | 完了（生成テスト接続はT16） |
 | T18 | 認証の共通処理・policy | T10、T12、T17 | 完了 |
-| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 未着手 |
+| T19 | 認証API・リセット・auth生成 | T18、T21、T22、T23、T16 | 作業中 |
 | T20 | ジョブ契約・queue投入 | T04 | 完了 |
 | T21 | worker・retry・ワンショット | T20、T03 | 完了 |
 | T22 | mailer・SMTP・メールテスト支援 | T20、T03 | 完了 |
 | T23 | キャッシュ・共有レート制限 | T04、T10 | 完了 |
 | T24 | アップロード・ストレージ | T10、T18、T21 | 完了 |
-| T25 | WebSocket・複数サーバー配信 | T10、T18 | 作業中 |
+| T25 | WebSocket・複数サーバー配信 | T10、T18 | 完了 |
 | T26 | 計測基盤・OTel exporter | T03、T04 | 完了 |
-| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 作業中 |
+| T27 | 処理間のtrace連携 | T26、T10、T21、T22、T28 | 完了 |
 | T28 | gRPC入口・Protobuf・handler | T03、T04、T07、T18 | 完了 |
-| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 未着手 |
+| T29 | HTTP/gRPC同居と追加generator | T28、T15、T16 | 完了 |
 | T30 | 補助CLI・機能追加generator | T06、T19、T21、T22、T24、T25、T26、T29 | 未着手 |
 | T31 | 役割別Dockerイメージ | T29、T30 | 未着手 |
 | T32 | 配備先への実行対応 | T31、T27 | 未着手 |
@@ -431,7 +431,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T16 — model・resource・Requestのgenerator
 
-- 状態: レビュー待ち
+- 状態: 完了（main統合済み）
 - 担当者: Codex
 - ブランチ: `task/T16-resource-generator`
 - worktree: `.worktrees/T16-resource-generator`
@@ -494,10 +494,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T19 — 認証API・リセット・auth生成
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 作業中
+- 担当者: Codex
 - ブランチ: `task/T19-auth-api`
-- worktree: `.worktrees/T19-auth-api`（作成前）
+- worktree: `.worktrees/T19-auth-api`
 - 依存: T18、T21、T22、T23、T16
 - 対応仕様: 4.3、4.17
 - 主担当領域: 認証HTTP API・authテンプレート
@@ -620,10 +620,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T25 — WebSocket・複数サーバー配信
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（main統合済み）
+- 担当者: Codex
 - ブランチ: `task/T25-websocket`
-- worktree: `.worktrees/T25-websocket`（作成前）
+- worktree: `.worktrees/T25-websocket`
 - 依存: T10、T18
 - 対応仕様: 4.13
 - 主担当領域: channel runtime・配信・接続ticket
@@ -632,12 +632,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] 一度限りのticket、Origin、購読/操作、期限/失効、接続切断を検証する。
-- [ ] 別プロセスへの配信、サイズ上限、遅い受信者、heartbeatと再接続後のHTTP取得を確認する。
+- [x] 一度限りのticket、Origin、購読/操作、期限/失効、接続切断を検証する。
+- [x] 別プロセスへの配信、サイズ上限、遅い受信者、heartbeatと再接続後のHTTP取得を確認する。
 
 **今回含めないこと**: 永続配信・切断中の履歴再送。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: PostgreSQL 17で実WebSocketと別OSプロセスへの配信、一度限りticket、Origin拒否、購読/操作拒否、token失効時切断、通知サイズ上限、1件buffer溢れでの遅い受信者切断、heartbeat後の継続配信、再接続後のテスト用HTTP routeからの状態取得を確認。Rust 1.94 fmt/clippy/workspace testも通過。`kouga-channel`のルートは既存HTTP Routerの`with_state`結果へmergeする。チケットはURLでなく`Sec-WebSocket-Protocol`で渡す。認証migrationの後にchannel migrationを適用する。
 
 ### T26 — 計測基盤・OTel exporter
 
@@ -662,10 +662,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T27 — 処理間のtrace連携
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（main統合済み）
+- 担当者: Codex
 - ブランチ: `task/T27-trace-propagation`
-- worktree: `.worktrees/T27-trace-propagation`（作成前）
+- worktree: `.worktrees/T27-trace-propagation`
 - 依存: T26、T10、T21、T22、T28
 - 対応仕様: 4.15.1、4.19
 - 主担当領域: OTel context伝播・各機能の接続
@@ -674,12 +674,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] テストCollectorで標準/custom spanとjobのlink、試行番号、service名を確認する。
-- [ ] 並行context混入、信頼しない入力、秘密情報、contextなしの既存ジョブ、ワンショットflushを検証する。
+- [x] テストCollectorで標準/custom spanとjobのlink、試行番号、別service名を確認する。
+- [x] 並行context混入、信頼しない入力、秘密情報、contextなしの既存ジョブ、ワンショットflushを検証する。
 
 **今回含めないこと**: 業務payloadへのtrace情報の混入、監査ログの配送保証。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: `48f1e6e`。HTTP/gRPC入口、model DB、queue metadata、worker試行spanと投入spanへのlink、mail送信を`tracing`で接続。HTTP/gRPC/queue/workerのOTelは`otel` featureで任意。HTTPの外部親は指定した直接TCP peerのみ許可。`KOUGA_TEST_DATABASE_URL=... cargo test -p kouga-worker --features otel --test trace_flow`をPostgreSQL 17で実行し、別子プロセスのHTTP/workerから模擬Collectorへ送ったOTLP protobufを復号して別`service.name`、HTTP→model DB→queue投入、retry試行1/2の別spanとlink、worker→mailの子span、並行requestのcontext分離、無効/信頼外親の拒否、機密文字列のtrace/log/stdout非記録、trace contextがない既存ジョブ、ワンショット終了時flushを確認。SQLx `Acquire`のSend推論制約に対し公開model/queueの汎用DB操作を明示的な`impl Future + Send`へ変更し、同じHTTP handlerでmodel作成とqueue投入を実行できることを確認。Rust 1.94のfmt、all-features workspace clippy、workspace全テストも通過。HTTP/queue/workerの既定依存グラフにOTelがないことを確認。生SQLと任意の外向きHTTPクライアントは自動計測しない。実SMTP配送とgRPC→workerの通し試験は別タスクで扱う。
 
 ### T28 — gRPC入口・Protobuf・handler
 
@@ -704,10 +704,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 ### T29 — HTTP/gRPC同居と追加generator
 
-- 状態: 未着手
-- 担当者: 未割当
+- 状態: 完了（main統合済み）
+- 担当者: T29担当
 - ブランチ: `task/T29-grpc-coexistence`
-- worktree: `.worktrees/T29-grpc-coexistence`（作成前）
+- worktree: `.worktrees/T29-grpc-coexistence`
 - 依存: T28、T15、T16
 - 対応仕様: 4.17、4.19、利用者ガイドHTTPとgRPC
 - 主担当領域: 入口追加CLI・gRPCテンプレート
@@ -716,12 +716,12 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 
 **完了条件**
 
-- [ ] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
-- [ ] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
+- [x] HTTP追加前後とgRPC追加前後で既存コード・ルートを維持し、両入口から同じ業務操作を呼べる。
+- [x] 起動対象の既定値・重複追加・既存ファイル保護と、入口ごとの独立ビルドを検証する。
 
 **今回含めないこと**: 同一実行ファイルでの統合起動、OpenAPIと.protoの相互変換。
 
-**検証結果・後続への引き継ぎ**: 未記入。
+**検証結果・後続への引き継ぎ**: HTTP-firstでgRPC追加後、HTTPとgRPCを独立ビルドし、`/greet/Kouga`と`Greeting.Greet`が同じdomain関数から`Hello, Kouga!`を返す実通信を確認。gRPC-first単独時は`kouga server`がgRPC、後付けHTTP後はHTTPを既定起動し、両入口で同じ応答と既存`/health`を確認。`cargo tree`でgRPCから`kouga-http`/`kouga-openapi`、HTTPから`kouga-grpc`/Protobuf build依存が入らないことを確認。CLI統合テストでは重複追加、既存`.proto`保護、gRPC追加後のResource生成を検証し、整形後もResource生成と既存route保持を手動確認。ResourceとgRPCを併用する生成アプリの両packageも型チェック通過。Rust 1.94のworkspace fmt/clippy/test通過（SMTPテストのみsandboxのソケット制限により権限付きで再実行）。gRPCサンプルは公開Greeting操作のみ。業務固有の認証・DB・queue連携は利用者が実装し、Docker targetはT31へ。
 
 ### T30 — 補助CLI・機能追加generator
 
