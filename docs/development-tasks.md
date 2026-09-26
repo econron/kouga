@@ -959,7 +959,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T41 — Taskboard全役割の独立イメージ
 
-- 状態: 未着手
+- 状態: 作業中
 - ブランチ: `task/T41-taskboard-images`
 - worktree: `.worktrees/T41-taskboard-images`
 - 依存: T40

@@ -1,0 +1,12 @@
+[package]
+name = "taskboard-channel-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+
+[dependencies]
+taskboard-board = { path = "../../crates/board" }
+kouga-channel = { path = "KOUGA_SOURCE/crates/kouga-channel" }
+kouga-model = { path = "KOUGA_SOURCE/crates/kouga-model" }
+axum = "=0.8.9"
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "net", "signal"] }
