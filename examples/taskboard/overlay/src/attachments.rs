@@ -182,7 +182,7 @@ impl ApiOutput for FileBody {
         ResponseMeta {
             status: 200,
             content_type: Some("application/octet-stream"),
-            data_schema: None,
+            data_schema: Some(serde_json::json!({"type":"string","format":"binary"})),
             paginated: false,
         }
     }

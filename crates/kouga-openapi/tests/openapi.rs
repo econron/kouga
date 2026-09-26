@@ -1,5 +1,6 @@
 use kouga_http::{
-    Created, Endpoint, Json, Multipart, NoContent, Operation, Router, Validated, endpoint,
+    Created, Endpoint, Json, Multipart, NoContent, Operation, ResponseMeta, Router, Validated,
+    endpoint,
 };
 use kouga_openapi::generate;
 use kouga_validation::{
@@ -181,6 +182,25 @@ fn tuple_path_uses_each_item_schema() {
     let parameters = &document["paths"]["/bounds/{left}/{right}"]["get"]["parameters"];
     assert_eq!(parameters[0]["schema"]["type"], "integer");
     assert_eq!(parameters[1]["schema"]["type"], "string");
+}
+
+#[test]
+fn binary_download_has_raw_body_schema_not_json_envelope() {
+    let mut operation = Operation::new("files.download");
+    operation.responses.push(ResponseMeta {
+        status: 200,
+        content_type: Some("application/octet-stream"),
+        data_schema: Some(json!({"type":"string","format":"binary"})),
+        paginated: false,
+    });
+    let routes = Router::<()>::new()
+        .get("/files", Endpoint::handler(|| async { "bytes" }, operation))
+        .unwrap();
+    let document: Value = serde_json::from_str(&generate(&routes, "Files", "1").unwrap()).unwrap();
+    let schema = &document["paths"]["/files"]["get"]["responses"]["200"]["content"]["application/octet-stream"]
+        ["schema"];
+    assert_eq!(schema["format"], "binary");
+    assert!(schema.get("properties").is_none());
 }
 
 #[tokio::test]

@@ -152,7 +152,9 @@ fn operation(route: &Operation, definitions: &mut Map<String, Value>) -> Result<
                 .clone()
                 .ok_or_else(|| Error(format!("missing response schema: {}", route.operation_id)))?;
             let data = normalize(data, definitions)?;
-            let body = if response.paginated {
+            let body = if content_type != "application/json" {
+                data
+            } else if response.paginated {
                 json!({"type":"object","required":["data","meta"],"properties":{
                     "data":data,"meta":{"type":"object","required":["page","per_page","has_next"],"properties":{
                         "page":{"type":"integer"},"per_page":{"type":"integer"},"has_next":{"type":"boolean"}

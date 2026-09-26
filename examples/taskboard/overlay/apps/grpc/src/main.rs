@@ -1,5 +1,10 @@
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = kouga_telemetry::TelemetryConfig::from_env()?;
+    if std::env::var_os("OTEL_SERVICE_NAME").is_none() {
+        config.service_name = "taskboard-grpc".into();
+    }
+    let telemetry = kouga_telemetry::Telemetry::init(config)?;
     let address = std::env::var("KOUGA_GRPC_BIND")
         .unwrap_or_else(|_| "127.0.0.1:50051".to_owned())
         .parse()?;
@@ -21,6 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .serve_with_shutdown(address, shutdown())
         .await?;
+    let _ = telemetry.shutdown(std::time::Duration::from_secs(5)).await;
     Ok(())
 }
 
