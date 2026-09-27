@@ -13,7 +13,7 @@ use sqlx::{
     Executor,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
-use tokio::sync::Notify;
+use tokio::sync::{Barrier, Notify};
 use tokio_util::sync::CancellationToken;
 
 #[kouga_job::job(name = "t21_fast", version = 1, queue = "t21")]
@@ -109,6 +109,49 @@ async fn postgres_worker_lifecycle() {
     );
     assert_eq!(a.unwrap().succeeded + b.unwrap().succeeded, 2);
     assert_eq!(count.load(Ordering::SeqCst), 2);
+
+    // Observe the actual number of in-flight handlers at both sides of the
+    // configured concurrency boundary, rather than only counting completed jobs.
+    for limit in [1, 2] {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let pair_barrier = (limit == 2).then(|| Arc::new(Barrier::new(2)));
+        let mut bounded_options = options();
+        bounded_options.concurrency = limit;
+        let mut bounded = Worker::new(db.clone(), Arc::new(()), bounded_options).unwrap();
+        let active_in_handler = active.clone();
+        let peak_in_handler = peak.clone();
+        let barrier_in_handler = pair_barrier.clone();
+        bounded
+            .register::<Fast>(move |_: Fast, _: JobContext<()>| {
+                let active = active_in_handler.clone();
+                let peak = peak_in_handler.clone();
+                let barrier = barrier_in_handler.clone();
+                async move {
+                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    if let Some(barrier) = barrier {
+                        tokio::time::timeout(Duration::from_secs(1), barrier.wait())
+                            .await
+                            .expect("both handlers must enter within the concurrency limit");
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            })
+            .unwrap();
+        Fast { value: 3 }.enqueue(&db).await.unwrap();
+        Fast { value: 4 }.enqueue(&db).await.unwrap();
+        let result = bounded
+            .run_once(2, Duration::from_secs(2), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(result.succeeded, 2);
+        assert_eq!(peak.load(Ordering::SeqCst), limit);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
 
     let flaky = Arc::new(AtomicUsize::new(0));
     let mut worker = Worker::new(db.clone(), flaky.clone(), options()).unwrap();

@@ -1,4 +1,45 @@
-# 初版再監査（T44・公開判定保留）
+# 初版再監査（T44・T45、公開判定保留）
+
+## T45 残余障害・TLS・境界再監査（2026-09-27）
+
+T44節の7 image IDと最終固定Taskboard source snapshotを基準にした。新しい`task/T45-release-residual-audit`のコード変更はこの固定imageには含めず、SMTP故障窓などは生成fixtureのdebug/test統合試験で別途確認した。macOS/arm64 Docker Desktop上にT45専用bridge、PostgreSQL 17（`kouga-t45-postgres`、localhost:54157）、SeaweedFS、SMTP sink、OTLP Collectorを隔離し、外部SMTP・実クラウド・push/deployを使っていない。試験用資格情報、使い捨てCA秘密鍵はGit管理外。コンテナには非root、read-only root filesystemを指定した。`KOUGA_ENV=test`とS3のHTTP許可は隔離試験用で本番保証ではない。
+
+### 再現可能な故障窓と順次復旧
+
+`TASKBOARD_TEST_PAUSE_AFTER_SMTP_MS`は`cfg(debug_assertions)`かつ`KOUGA_ENV=test`の通知workerだけが読む試験用pauseで、SMTP `DATA`の250受理後、queue ack前に置いた。`cargo test -p taskboard-worker --test task_notice smtp_accept_before_ack_replays_mail_but_not_database_effect`を生成fixtureとT45専用DB/SMTP sinkで実行し、最初のworkerをこの窓でkill、lease満了後に別workerを起動した。jobはattempt 2で成功、task eventのDB効果は**1件**、sinkのSMTP受理は**2通**だった。これはat-least-onceの限界であり、外部SMTP送信のexactly-onceを保証しない。メール重複を許容しない利用者は受信側または配送事業者側で冪等キー等を設計する必要がある。試験用pauseはrelease imageには存在しない。
+
+T45の候補imageを含むHTTP/gRPC/Channel/認証worker/通知workerの5常駐processを1回の`docker stop --timeout 5`で停止し、1回の`docker start`で再起動した。admin/cleanupはワンショットのため同時停止対象ではない。復旧後HTTP `/ready`=200、gRPC呼出しと外部WebSocket購読、既存task 2件/添付1件/成功job 4件の保持を確認した。これは一操作での停止・再起動であり、完全に同時刻の分散障害や全ケースの負荷下復旧ではない。
+
+| 注入対象 | 停止中 | 復旧後 |
+|---|---|---|
+| DB | `/health`=200、`/ready`=503、業務`/projects`=503。両workerは接続エラーでexit 1 | DB再開でHTTP `/ready`=200。workerは**自動復帰せず**明示的再起動後にjob処理成功。配備時はorchestratorの再起動ポリシーが必須 |
+| S3 | 所有者upload=503。DBには添付1件と`delete_pending`1件が残る | S3再開後、独立cleanup imageの一回実行で`cleaned 1 attachments`。添付1件は維持 |
+| SMTP | 通知jobが再試行上限に達しdead（test環境の短いbackoff）。DB eventは1件、sink受理0通 | sink再開後、運用CLI `kouga jobs retry <job-id>`とworker再起動でjob成功。DB eventは1件、sink受理1通 |
+| Collector | OTel有効HTTPで認証付き`GET /tasks`=200。停止中のtrace配送は未保証 | Collector再開後もHTTP=200、Collector debug exporterに新しいTraces（resource spans 1/5）とMetrics（data points 1）を観測 |
+
+workerの`run_forever`はDB接続エラーでexit 1を返す現在の契約/挙動である。DB復旧だけで継続するとは記載しない。orchestratorのrestart policyとdead jobの運用再投入を配備手順に追加する必要がある。SMTP outage中の5回試行は試験用backoff条件で、一般的な本番経過時間を示さない。
+
+### 役割・境界・軽量性能
+
+Debian 13 distroless候補image（後述）の7役割をT44 snapshotのbinaryから試作し、全てLinux/arm64、非root UID 65532、read-onlyで起動した。adminは専用DBの5 migration適用と再実行0件、HTTPは所有者CRUD・実S3へのPDF upload/download SHA-256一致、gRPCは認証付きGetTask/CreateTask、通知workerはS3添付取得→bridge上TLS SMTP受理、認証workerはreset mail、Channelは別processから外部WebSocketイベント受信、cleanupはS3復旧後の削除1件を確認。TLS CAはimageにコピーせず実行時mountと`SSL_CERT_FILE`で渡した。Dockerのhost loopback宛SMTPは届かず初回失敗したため、専用bridge DNS宛に修正して再試験した。ここで確認したのは候補のarm64のみで、既定Dockerfileは変更していない。
+
+境界はgRPC `CreateTaskRequest`のProtobuf wire payload **4,194,304 byte**が認証未指定時`Unauthenticated`まで進み、**4,194,305 byte**が`ResourceExhausted`で拒否されることをrelease gRPC imageへ`grpcurl`で確認。外部Channelはテキストframe **4,096 byte**を受けて次の購読応答が継続し、**4,097 byte**ではclose。T45追加の`kouga-db`実DB試験はpool上限1で最初のconnection保持中、2番目のacquireが`PoolTimedOut`となり、解放後再取得できることを確認した。queueの既存2 worker claim/lease試験は専用DBで成功。追加した`postgres_worker_lifecycle`では設定concurrency 1/2時のactive handler peakが各1/2になることを、`Barrier`で2 handlerの同時到達を同期してT45専用DBで実測した。初回は`Worker::new`へ`()`を渡す型誤り、次回はサンドボックスのlocalhost接続拒否で失敗したが、型を`Arc::new(())`へ修正し正規のローカル接続許可で再実行して成功した。DB接続・gRPC・WSはそれぞれ独立試験で、複合負荷下の同時上限保証ではない。
+
+軽量性能は`BASE_URL=http://127.0.0.1:18097 MODE=json k6 run --vus 2 --duration 10s --summary-trend-stats 'avg,min,med,max,p(90),p(95),p(99)' benchmarks/t40-taskboard-http.js`。T45候補HTTPの`GET /health`のみ、32,615件、成功100%、約3,261 request/s、client観測p50 0.438 ms/p95 1.10 ms/p99 2.63 ms。同じDocker Desktopで専用DB/S3/SMTP sink/Collectorと別のHTTP/gRPC/worker/Channelが稼働していたが、このendpointはDB・認証・S3・SMTPを呼ばず、計測中のOTLP負荷も隔離していない。Mac/Docker Desktop共有環境の一回測定で容量設計の指標ではない。
+
+### TLS relayとRust検証
+
+`scripts/smtp_tls_sink.py`を使いローカルの使い捨てCAで証明書を発行したTLS SMTP sinkをloopback/隔離bridgeだけで稼働させた。`KOUGA_TEST_SMTP_TLS_PORT`と`KOUGA_TEST_SMTP_TLS_BAD_CERT_PORT`を与えるopt-in `kouga-mailer/tests/mail.rs::local_tls_relay_checks_ca_hostname_and_authentication`は、CA検証＋正しいAUTHで送信成功、誤ったAUTH拒否、信頼しない自己署名証明書拒否を確認。外部relay、クラウドIAM/署名は未試験。生成Taskboardの通知・認証workerもCA runtime mountからbridge上のTLS sinkへ配送成功した。
+
+Rust 1.94のroot `fmt --all --check`、`clippy --workspace --all-targets --locked -- -D warnings`、実DB付き`test --workspace --locked`を**queue peak追加後に再実行し成功**した。初回のworkspace全テストはT45の通常アプリDBに`pg_stat_statements`がpreloadされておらず、`kouga-model/tests/associations.rs`がSQLSTATE 55000で失敗した。既存DBを変更せず、**別のT45専用**PostgreSQL 17（localhost:54158）を`-c shared_preload_libraries=pg_stat_statements`付きで起動した。途中、サンドボックスではローカルlistener作成が`Operation not permitted`となり`kouga-mailer/tests/mail.rs`の3件で停止したが、正規のローカル接続許可を得て`KOUGA_TEST_DATABASE_URL`を専用preload DBに向け、全テストを成功させた。S3テストは別の実S3試験で、workspace一括実行にS3環境変数を混在させていない。生成fixtureでもfmt/全target Clippyを再確認し、通知workerの2統合テストと外部Channel統合テスト（実HTTP/Channel、4,096/4,097 byte境界）を再実行して成功した。T45の実環境検証はこの条件に限る。
+
+脆弱性と素材監査の詳細は[配布方針のT45節](distribution-compatibility.md#t45の脆弱性素材再監査2026-09-27)に記録した。現行Bookworm imageの未解決CVE、amd64/Lambda/法務未確認、サポート期間未定、および第6節14件一括合格未判定により、**公開判定は引き続き保留**。実クラウド/対外送信/push/deployは行っていない。
+
+後片付け: 権限制限中の初回停止はDocker APIの`permission denied`で失敗した。権限復旧後に次の単一コマンドでT45専用11コンテナを**全て停止済み**。`docker ps --filter name=kouga-t45`は空で、既存`kouga-t19-postgres`は稼働継続を確認。コンテナは削除しておらず再起動可能。共有target、Docker全体のpruneには触れていない。
+
+```sh
+docker stop --timeout 5 kouga-t45-test-postgres kouga-t45-http-otel kouga-t45-collector kouga-t45-notice-worker kouga-t45-auth-worker kouga-t45-grpc kouga-t45-channel kouga-t45-smtp kouga-t45-http-s3 kouga-t45-s3 kouga-t45-postgres
+```
 
 T44の作業ブランチは`task/T44-final-hardening`。以下はT43統合mainからの再監査であり、初版公開可能の判定ではない。GitHub/registryへのpush、実クラウドdeploy、公開はしていない。検証環境はmacOS arm64上のDocker Desktop、Rust 1.94、専用PostgreSQL 17（新規生成物用`kouga_t44_final`）、SeaweedFS S3互換、ローカルSMTP sink、ローカルOTLP受信器。資格情報は既存テストコンテナから試験実行時だけ取得し、文書へ値を出さない。HTTP/workerは`KOUGA_ENV=test`と`BOARD_S3_ALLOW_HTTP=1`でローカルHTTP S3 endpointを使う。これは本番TLS/クラウドIAMの試験ではない。
 

@@ -1,4 +1,4 @@
-use kouga_mailer::{MailMessage, Mailer, MemoryMailer, SmtpMailer, render_html};
+use kouga_mailer::{Credentials, MailMessage, Mailer, MemoryMailer, SmtpMailer, render_html};
 use lettre::message::header::ContentType;
 use std::time::Duration;
 use tokio::{
@@ -178,4 +178,41 @@ async fn starttls_does_not_downgrade() {
     );
     let lines = server.await.unwrap();
     assert!(!lines.iter().any(|line| line.starts_with("MAIL FROM:")));
+}
+
+/// Opt-in local relay fixture: see scripts/smtp_tls_sink.py. It never sends mail
+/// beyond loopback and exercises the production implicit-TLS constructor.
+#[tokio::test]
+async fn local_tls_relay_checks_ca_hostname_and_authentication() {
+    let Ok(port) = std::env::var("KOUGA_TEST_SMTP_TLS_PORT") else {
+        return;
+    };
+    let port: u16 = port.parse().unwrap();
+    let good = SmtpMailer::relay(
+        "localhost",
+        port,
+        Some(Credentials::new("local-user".into(), "local-pass".into())),
+    )
+    .unwrap();
+    good.deliver(&mail()).await.unwrap();
+
+    let wrong = SmtpMailer::relay(
+        "localhost",
+        port,
+        Some(Credentials::new("local-user".into(), "wrong".into())),
+    )
+    .unwrap();
+    assert!(wrong.deliver(&mail()).await.is_err());
+
+    let invalid_port: u16 = std::env::var("KOUGA_TEST_SMTP_TLS_BAD_CERT_PORT")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let invalid = SmtpMailer::relay(
+        "localhost",
+        invalid_port,
+        Some(Credentials::new("local-user".into(), "local-pass".into())),
+    )
+    .unwrap();
+    assert!(invalid.deliver(&mail()).await.is_err());
 }
