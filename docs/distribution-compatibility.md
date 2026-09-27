@@ -18,3 +18,9 @@ Dockerは生成済みDockerfileを維持し、アプリから`docker build --bui
 `cargo +1.94.0 metadata --locked --offline --format-version 1`でKouga workspaceのregistry由来404 packageを列挙し、`license`と`license_file`の両方が欠落するpackageは0件だった。再現用の確認式は`cargo +1.94.0 metadata --locked --offline --format-version 1 | jq '[.packages[] | select(.source != null)] | length'`と、同じmetadataの`[.packages[] | select(.source != null and .license == null and .license_file == null)] | length`で、それぞれ404/0となる。主な式は`MIT OR Apache-2.0` 221件、`MIT` 77件、`Apache-2.0 OR MIT` 23件、`Unicode-3.0` 18件、`Apache-2.0` 16件で、残り49件にはBSD、ISC、Zlib、CDLA-Permissive-2.0等が含まれる。`r-efi`等の選択肢にLGPLが含まれていても、MIT/Apacheを選べる式である。これは**ライセンス適合の法的承認ではない**。metadataは全workspaceの候補依存であり、release targetごとの実際のリンク/同梱、ライセンス本文、notice義務、ベースイメージOS packageやvendored Swagger UI素材を網羅しない。公開前にtarget別SBOM/third-party noticesを生成・レビューする。
 
 Kouga workspaceは`MIT OR Apache-2.0`を宣言する一方、現在のGit追跡ファイルにはトップレベルのライセンス本文がない。公開前に権利者を確定し、MITとApache-2.0本文を追加する必要がある。Swagger UI vendored素材とOpenAPI schemaの版・checksum・ライセンス参照は[API契約](api-contracts.md)に記録済み。検証用SeaweedFSコンテナはKougaの配布物へ含めない。実クラウド、外部TLS relay、全プラットフォームの法務・脆弱性監査は未実施。
+
+### T44の役割別Rust依存インベントリ（法務承認前）
+
+ソースsnapshot化したTaskboardに対し、Python 3.11以上で`python3.12 examples/taskboard/release-inventory.py APP_DIRECTORY OUTPUT_DIRECTORY`を実行すると、7つのDocker targetごとにCycloneDX 1.6 JSONを出力する。`Cargo.lock`と`cargo tree --target aarch64-unknown-linux-gnu -e normal --locked --offline`を照合し、固定したKouga commit、registry checksum、Cargo metadataのライセンス申告を記録する。`admin`と`http`、2種類のworkerはそれぞれ同じCargo packageの通常依存をビルドするため、同じ候補集合となる。これは**リンク済みbinaryの厳密な同梱一覧ではなく、Cargo通常依存の候補インベントリ**である。ビルド依存・dev依存は含めず、ベースイメージのDebian package、CA証明書、Swagger UI等の埋込素材、実際の権利者/notice義務は別途監査する。生成JSONをそのまま法的なthird-party noticesや完成SBOMとして公開しない。
+
+T43のsource snapshotを使った初回試算ではRust package候補はHTTP/admin各296、gRPC 246、認証/通知worker各221、Channel 186、storage cleanup 192。ローカルTaskboard packageはライセンス未申告。T44の最終固定commitから再生成した成果物で件数・欠落・OS素材を再監査する。Kouga本体のライセンス本文・著作権者は権利者確認後に確定し、未確認のまま推定して追加しない。
