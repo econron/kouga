@@ -83,7 +83,7 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T41 | Taskboard全役割の独立イメージ | T40 | 統合済み |
 | T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 統合済み |
 | T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 統合済み（限定事項はT44） |
-| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | 進行中（公開判定保留） |
+| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | レビュー待ち（公開判定保留） |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -1024,7 +1024,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T44 — 公開前の複合障害・配布・ライセンス仕上げ
 
-- 状態: 進行中（公開判定保留）
+- 状態: レビュー待ち（公開判定保留。法務・公開条件は未達）
 - 依存: T43レビュー・統合後
 - 対応仕様: 第5・6節の未実証範囲、配布物と法務上の公開条件
 - ブランチ: `task/T44-final-hardening`
@@ -1034,4 +1034,4 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 **配布監査と完了条件**: 実際のrelease targetごとにCargo依存・同梱資産/ベースイメージのライセンスを棚卸し、権利者を確認したKougaライセンス本文、third-party notices、SBOMを整備して法務レビューへ渡す。脆弱性・MSRV・再現可能なtag/commit・移行順序も確認する。サポート期間/EOLはユーザー判断を受けて初版公開前に文書化する。仕様第6節14件を単一配布Taskboardで再判定し、未達があれば公開判定を保留する。push/deploy/公開は別途明示依頼があるまで行わない。
 
-**T44途中経過**: 現行CLIでの再生成、実DB全テスト・実S3専用テスト・fmt/全target Clippy・OpenAPI差分検査を実施。clean commit `84a4d31`のソースsnapshotから7役割Linux/arm64 imageをbuildし、全役割の非root/read-only起動、実DB・実S3・SMTP sinkでgRPC→worker通知と添付メール配送を確認。DB/S3停止・復旧、失敗後清掃、実worker kill→lease再取得、10/11 MiB境界も実測。生成fixtureのdebug統合テストへserver 504とgRPC deadline後のDB/job確定試験を追加し、専用実DB/S3で成功。結果・試験条件・未達は[再監査](release-verification.md)のT44節に記録した。技術的な役割別Rust依存CycloneDX候補と7 imageのDebian OS package inventoryは[配布方針](distribution-compatibility.md)に記録。Kouga権利者/ライセンス本文、法的third-party notices、CVE scan、最終source commitの再snapshot、残りの複合障害・性能・14件一括判定は未完了。公開可能とは判定しない。
+**T44検証結果（公開判定保留）**: 現行CLIで再生成したTaskboardを最終clean commit `320082b`のsource snapshotへ固定し、実DB全テスト・実S3専用テスト・fmt/全target Clippy・OpenAPI差分検査を実施。同snapshotから7役割Linux/arm64 imageをbuildし、全役割の非root/read-only起動、実DB・実S3・SMTP sinkでgRPC→worker通知と添付メール配送を確認。先行故障試験と最終image IDが同じ5役割を照合し、DB/S3停止・復旧、失敗後清掃、実worker kill→lease再取得、10/11 MiB境界の結果を継承。生成fixtureのdebug統合テストでserver 504とgRPC deadline後のDB/job確定が成功。最終imageの認証付きHTTP/gRPC並行作成から別workerへの2 trace分離、生成fixtureのreset後WebSocket close、固定条件のHTTP＋Collector軽量性能も再測定。結果・試験条件・未達は[再監査](release-verification.md)のT44節に記録。役割別Rust依存CycloneDX候補と7 imageのDebian OS package inventoryは[配布方針](distribution-compatibility.md)に記録。Kouga権利者/ライセンス本文、法的third-party notices、CVE scan、SMTP受理直後故障、全役割同時復旧、外部TLS/クラウドIAM、14件一括合格は未完了。公開可能とは判定しない。
