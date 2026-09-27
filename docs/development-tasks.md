@@ -1052,7 +1052,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 **T45実測・残件**: T44固定imageと専用bridge/DB/S3/SMTP/Collectorで全5常駐役割の一操作停止・明示再起動、各依存の順次停止/復旧を実測。DB障害時workerはexit 1して自動復帰しないため、配備時の再起動ポリシーが必須。生成fixtureのdebug/test専用SMTP 250後pause→worker killでDB event 1件、SMTP受理2通を確認し、at-least-onceのメール重複境界を利用者向けに記載。実gRPC 4 MiB/1超過、WS 4096 byte/1超過、DB pool 1/2要求、既存queue 2 worker claim、設定concurrency 1/2のactive handler peak 1/2を専用実DBで確認。固定条件のk6 health軽量試験は2 VU/10秒・32,615件、成功100%、p95 1.10 ms（容量保証ではない）。ローカル使い捨てCAのSMTP TLS/AUTH成功・拒否と7役割のdistroless Debian 13候補起動を確認したが、既定baseは変更しない。Trivy 0.66/2026-09-27 DBではT44の7 image**各々**に同じBookworm OS層由来CRITICAL 4/HIGH 52 package-CVE組合せ（18 unique CVE、17 package名）があり、公開判定を保留。distroless試作7 imageは同DB範囲のCRITICAL/HIGH 0でもamd64/Lambda/法務は未確認。root workspace全テストは初回通常T45 DBの`pg_stat_statements`未preloadで失敗、既存DBを触らず別T45専用preload DBで**queue peak試験追加後に再実行して成功**。生成fixtureのfmt/Clippy、通知worker 2件、実HTTP/Channel外部WS境界も再実行して成功。詳細・条件は[再監査](release-verification.md#t45-残余障害tls境界再監査2026-09-27)と[配布方針](distribution-compatibility.md#t45の脆弱性素材再監査2026-09-27)。Kouga権利者/ライセンス本文、法的notices、0.x EOL、実クラウド、複合負荷下全上限、第6節14件一括合格は未達/未決。公開・push・deployなし。
 
-**残置コンテナ**: T45専用11件は権限変更後のDocker API拒否で停止できず、直前には稼働中。[再監査の停止コマンド](release-verification.md#t45-残余障害tls境界再監査2026-09-27)で名前を確認して明示停止する。別タスクのコンテナは対象外。
+**試験後のコンテナ**: 権限制限中の初回停止はDocker API拒否で失敗したが、権限復旧後にT45専用11件を明示名で停止し、`docker ps --filter name=kouga-t45`が空であることを確認。既存`kouga-t19-postgres`は稼働継続。コンテナ削除や広域pruneは行っていない。停止コマンドは[再監査](release-verification.md#t45-残余障害tls境界再監査2026-09-27)に記録。
 
 ### T46 — 公開ゲート残件の引継ぎ
 

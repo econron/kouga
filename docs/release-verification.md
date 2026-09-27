@@ -35,7 +35,7 @@ Rust 1.94のroot `fmt --all --check`、`clippy --workspace --all-targets --locke
 
 脆弱性と素材監査の詳細は[配布方針のT45節](distribution-compatibility.md#t45の脆弱性素材再監査2026-09-27)に記録した。現行Bookworm imageの未解決CVE、amd64/Lambda/法務未確認、サポート期間未定、および第6節14件一括合格未判定により、**公開判定は引き続き保留**。実クラウド/対外送信/push/deployは行っていない。
 
-後片付け: T45専用の11コンテナを明示名で停止しようとしたが、権限変更後のDocker APIは`permission denied`で停止できなかった。直前の`docker ps`では11件とも稼働中。**残置しており停止済みではない**。権限のある環境で名前を再確認した後、次の単一コマンドでT45専用のみ停止する。既存T19等のコンテナ、共有target、Docker全体のpruneには触れていない。
+後片付け: 権限制限中の初回停止はDocker APIの`permission denied`で失敗した。権限復旧後に次の単一コマンドでT45専用11コンテナを**全て停止済み**。`docker ps --filter name=kouga-t45`は空で、既存`kouga-t19-postgres`は稼働継続を確認。コンテナは削除しておらず再起動可能。共有target、Docker全体のpruneには触れていない。
 
 ```sh
 docker stop --timeout 5 kouga-t45-test-postgres kouga-t45-http-otel kouga-t45-collector kouga-t45-notice-worker kouga-t45-auth-worker kouga-t45-grpc kouga-t45-channel kouga-t45-smtp kouga-t45-http-s3 kouga-t45-s3 kouga-t45-postgres
