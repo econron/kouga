@@ -1,3 +1,43 @@
+# 初版再監査（T44・公開判定保留）
+
+T44の作業ブランチは`task/T44-final-hardening`。以下はT43統合mainからの再監査であり、初版公開可能の判定ではない。GitHub/registryへのpush、実クラウドdeploy、公開はしていない。検証環境はmacOS arm64上のDocker Desktop、Rust 1.94、専用PostgreSQL 17（新規生成物用`kouga_t44_final`）、SeaweedFS S3互換、ローカルSMTP sink、ローカルOTLP受信器。資格情報は既存テストコンテナから試験実行時だけ取得し、文書へ値を出さない。HTTP/workerは`KOUGA_ENV=test`と`BOARD_S3_ALLOW_HTTP=1`でローカルHTTP S3 endpointを使う。これは本番TLS/クラウドIAMの試験ではない。
+
+### 直接実証した範囲
+
+T44 source CLIを共有`CARGO_TARGET_DIR`で再ビルドして新規Taskboardを生成。旧共有CLIはT43 worktreeの絶対pathを埋め込んでおり、新生成時にT43/T44の同名crateがlockfile上で衝突したため使わなかった。最終clean commit `320082b861416cf04a6e02bdd4f82d15adfe5e48`から生成した`/private/tmp/kouga-t44-taskboard-final`でfmt、全target Clippy `-D warnings`、専用実DBの生成workspace全テストが成功。S3専用`storage_s3`は全testへS3 envを付けずに分離して実SeaweedFSで成功。初回に全testへS3 envを混在させた失敗（local backend試験のファイル不存在）は環境設定ミスで、分離後に通過した。OpenAPIのRequest/認証差分検出→再生成→check成功。`package-source.sh`で同commitを`vendor/kouga`へ固定し、Cargo manifestに絶対pathがないことを確認した。検証は共有`CARGO_TARGET_DIR`と`CARGO_INCREMENTAL=0`を使用した。
+
+このsnapshotと`Cargo.lock`から`docker build --build-context kouga=./vendor/kouga --target TARGET`で7 targetすべてを個別ビルド。全imageはLinux/arm64、`USER 65532:65532`。展開サイズはadmin 101,381,817 B、HTTP 121,707,932 B、gRPC 107,090,668 B、認証worker 108,334,940 B、通知worker 110,760,540 B、Channel 103,604,164 B、清掃 107,216,988 B。全役割を`--read-only --tmpfs /tmp --memory 256m --cpus 2`で起動した。adminは**新DB**へ5 migration、同じ生成物で再実行すると適用0件。HTTP `/health`と`/ready`は200、別gRPCとChannelは稼働、認証workerは空queueの`--once`でexit 0、清掃は実S3設定のワンショットでexit 0。HTTP発行tokenを別gRPC imageへ渡したProject/Task作成が成功し、別通知worker imageがjobを処理して独立SMTP sinkに1件受理された。HTTP imageから所有者認証付き実S3 PNG添付を保存し、`attachment_mail` jobを別通知worker imageがS3から取得してSMTP sinkに配送した。2 jobの`status=succeeded`をDBで確認した。
+
+最終image IDを`docker image inspect`で記録した。HTTP・両worker・Channel・清掃は先行故障注入時と**同じimage ID**と照合し、admin/gRPCは最終版で直接起動・連携再試験した。先行故障結果の継承は同一IDの5役割に限定する。
+
+| 役割 | 最終image ID |
+| --- | --- |
+| admin | `sha256:b8cb31bf3f24848b5dbf8e36df4e3fc87b1882a59de8e81b333a6239d44f246c` |
+| HTTP | `sha256:bb32dc97521327f86540805fc358571a774a392cbf6b593fb5bb55a3d5349e24` |
+| gRPC | `sha256:e55af61fba644112c41992ba52045bfc5f0c030321ab623a71238f3c75b9d708` |
+| 認証worker | `sha256:612a087e6df50ed4dd569927ee6890d61139c6df0558407bd5ba9d834de2b078` |
+| 通知worker | `sha256:ba6fc74d4d8831184d145685ac5702bce5203c2a5e3ff2e5baf70665177ff570` |
+| Channel | `sha256:7865a907f8739dfffb6ca3511b8048f825f4c6c13893daa22a94f5acfed9d2f9` |
+| 清掃 | `sha256:3371dd3b7dbb4019ed8bdd8e35ce17dfaa880aca55155129f1d48b2a1ff3d65e` |
+
+ソース再生成ごとに認証migrationのtimestampが変わり得るため、新生成アプリを旧生成アプリの既存DBへ向けると`HistoryMismatch`になる。配布・更新では同じ生成アプリのソース、snapshot、migration履歴を一組として扱い、別生成アプリには新DBを使う。
+
+故障注入では専用DB停止中にHTTP `/ready=503`、`/health=200`、復旧後`/ready=200`。S3停止中の認証付きuploadは503、DBには`delete_pending`が1件残り、S3復旧後に別清掃imageが1件再処理し、正常な`attached`添付は保持された。通知workerを永続効果1件・job `running`の直後にコンテナ強制終了し、lease失効後に別read-only workerがattempt 2で再取得、DB効果は合計1回、SMTP sink受理は1回増、jobは`succeeded`となった。最初の10秒pause試行は停止窓を逃して先にjobが成功したため故障実証に数えず、30秒pauseの再試験を根拠とする。
+
+生成アプリの実DB/S3統合テストへ**debug build限定**の1秒`HttpOptions.timeout`と既存のenqueue後2秒pauseを組み合わせ、`POST .../attachments/{id}/email`のサーバー応答504を直接確認した。DBの同種job件数は2から3へ増え、504はcommit取消しを意味しない。生成gRPCサービスにはdebug buildかつ`KOUGA_ENV=test`限定のcommit後pauseを追加し、100 ms client deadlineで`DeadlineExceeded`を受けた後にもTaskと通知jobがcommitされたことを専用DBで確認した。両者とも**release imageでの故障注入ではない**。実S3 uploadは10 MiBちょうど201、10 MiB+1 Bは413。HTTP JSON本文は11 MiBちょうどサイズ制限を通過して不正JSONの400、11 MiB+1 Bは413。queue/接続/WebSocket/gRPC上限の同時境界は未実測。
+
+最終snapshotのRust依存候補は[配布方針](distribution-compatibility.md)の役割別CycloneDX生成スクリプトで再計測し、HTTP/admin各296、gRPC246、両worker各245、Channel186、清掃192件で先行snapshotと一致。Trivy 0.66のオフラインlicense scanは各imageのDebian 12.15 OS package 88件＋OS componentを検出したが静的Rust依存は検出しないため両台帳が必要。`libcrypt1`、`libgcc-s1`、`libstdc++6`はlicense未分類でも同梱copyrightファイル有。法的notice義務、権利者、CA bundle/Swagger UI、現行脆弱性DBを使ったCVE監査は未完了。Kougaのライセンス本文/著作権者、公開後サポート期間/EOLはユーザー判断待ち。
+
+### 未完了の横断条件
+
+最終imageをローカルOTLP受信器と同じネットワーク名前空間で起動し、異なるHTTP/gRPC認証付きTask作成を同時発行した。DBに保存された2つの異なるjob trace IDは通知worker実行後も保持され、両jobが`succeeded`、SMTP sinkが2通受理。OTLP protobufでは各IDがそれぞれの入口serviceと通知workerのpayloadに現れ、互いのpayloadへ混入しなかった。外部から指定した`traceparent`は取り込まれなかったが、HTTP生成アプリは`trusted_trace_peers`が既定の空集合、gRPC生成BoardServiceは信頼peer用`kouga_grpc::trace_request`を配線していない。前者は意図した信頼境界、後者の上流trace継承は要手動配線であり、信頼peer構成での継承は未試験。Collector停止・復旧での欠落/回復も未試験。
+
+最終snapshotの`TEST_DATABASE_URL`をホストloopbackへ向けて`cargo +1.94.0 test --test attachment_channel --locked --offline owner_attachment_cross_server_events_and_reset -- --exact`を再実行し、password reset後の旧token拒否、旧ticketでの接続拒否、既存WebSocketの2秒以内closeを確認した。初回はDocker内向け`host.docker.internal` URLをホスト試験へ誤用してDB接続失敗、修正後に成功。Docker release Channel imageでのreset後socket試験は未実施。
+
+性能は最終HTTP＋OTLP受信器で`k6 run --vus 2 --duration 15s benchmarks/t40-taskboard-http.js`を使用。`/health`は5523件、失敗0、p95 18.73 ms。認証付きTask readは既定rate 120/分で429が混入したためその試行を性能値に使わず、`BOARD_RATE_LIMIT_PER_MINUTE=100000`と明示して再起動後396件、失敗0、p95 216.56 ms。macOS Docker Desktop共有環境で各1回のみ、CPU/DB/Collectorの競合を含む。性能優位、容量、回帰判定には使わない。
+
+未完了はSMTP受理直後のack故障と重複境界、全役割同時停止/復旧、実外部TLS relayとクラウドIAM/署名、キュー/接続/gRPC/WS上限の同時境界、法的third-party notices・CVE・サポート期間。T43以前の個別試験証拠をT44の同時複合試験と混同しない。**第6節14件を単一配布物で全て合格とは判定しない。**
+
 # 初版再監査（T43）
 
 T43の作業ブランチは`task/T43-release-hardening`。この節はT41/T42統合後の同じ再生成可能なTaskboardに対する追加監査であり、T40以前の節は履歴である。判定は**公開前の残件あり**。今回の直接実証とT35〜T42の引継ぎ証拠を分けて記す。実クラウドdeploy、registry push、GitHub公開はしていない。

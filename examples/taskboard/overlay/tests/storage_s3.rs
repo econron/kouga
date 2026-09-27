@@ -271,6 +271,38 @@ async fn s3_owner_failure_and_cleanup_across_app_instances() {
     .unwrap();
     assert_eq!(durable_count, 2);
 
+    // Unlike a client-side deadline, this exercises the server's 504 path.
+    // The enqueue is committed before the test-only response pause begins.
+    let short_deadline = TestClient::new(
+        taskboard::router()
+            .configure(kouga_http::HttpOptions {
+                max_body_bytes: 11 * 1024 * 1024,
+                timeout: std::time::Duration::from_secs(1),
+                ..Default::default()
+            })
+            .unwrap()
+            .with_state(db.clone()),
+    );
+    unsafe { std::env::set_var("TASKBOARD_TEST_PAUSE_AFTER_ATTACHMENT_ENQUEUE_MS", "2000") };
+    let timed_out = send(
+        &short_deadline,
+        "POST",
+        &mail_url,
+        vec![],
+        Some(&alice),
+        "application/json",
+    )
+    .await;
+    unsafe { std::env::remove_var("TASKBOARD_TEST_PAUSE_AFTER_ATTACHMENT_ENQUEUE_MS") };
+    assert_eq!(timed_out.status(), StatusCode::GATEWAY_TIMEOUT);
+    let durable_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM kouga_jobs WHERE name='taskboard.attachment_mail'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(durable_count, 3);
+
     let endpoint = std::env::var("BOARD_S3_ENDPOINT").unwrap();
     unsafe { std::env::set_var("BOARD_S3_ENDPOINT", "http://127.0.0.1:1") };
     let failed = send(

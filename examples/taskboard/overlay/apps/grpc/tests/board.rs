@@ -3,6 +3,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Request as HttpRequest, StatusCode},
 };
+use kouga_model::sqlx;
 use kouga_test::{TestClient, TestDb};
 use std::time::Duration;
 use taskboard_grpc::BoardService;
@@ -226,6 +227,46 @@ async fn http_and_grpc_share_owner_scoped_board() {
     )
     .await;
     assert_eq!(count["data"]["completed"], 1);
+
+    let before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM kouga_jobs WHERE name='taskboard.task_created'")
+            .fetch_one(isolated.db())
+            .await
+            .unwrap();
+    unsafe {
+        std::env::set_var("KOUGA_ENV", "test");
+        std::env::set_var("TASKBOARD_TEST_PAUSE_AFTER_GRPC_CREATE_MS", "2000");
+    }
+    let mut delayed = authorized(
+        rpc::CreateTaskRequest {
+            project_id: project_id.clone(),
+            title: "Committed before deadline".into(),
+        },
+        &alice,
+    );
+    delayed.set_timeout(Duration::from_millis(100));
+    let deadline = grpc.create_task(delayed).await.unwrap_err();
+    unsafe { std::env::remove_var("TASKBOARD_TEST_PAUSE_AFTER_GRPC_CREATE_MS") };
+    assert_eq!(
+        kouga_grpc::normalize_client_timeout(deadline).code(),
+        Code::DeadlineExceeded
+    );
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM kouga_jobs WHERE name='taskboard.task_created'",
+            )
+            .fetch_one(isolated.db())
+            .await
+            .unwrap();
+            if count == before + 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("gRPC task/job transaction committed before the client deadline");
 
     let mut expired = authorized(rpc::GetProjectCountRequest { project_id }, &alice);
     expired.set_timeout(Duration::from_nanos(1));

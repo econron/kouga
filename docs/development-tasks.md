@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T42統合済み。T43はレビュー待ち、T44は未着手。T34/T40/T43監査で初版未達と判定し、公開前の残件を追跡
+状態: T00〜T43統合済み。T44は進行中。T34/T40/T43監査で初版未達と判定し、公開前の残件を追跡
 対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -82,8 +82,9 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T40 | 初版の残件再監査 | T36、T37、T38、T39 | 統合済み |
 | T41 | Taskboard全役割の独立イメージ | T40 | 統合済み |
 | T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 統合済み |
-| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | レビュー待ち（限定事項はT44） |
-| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | 未着手 |
+| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 統合済み（限定事項はT44） |
+| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | レビュー待ち（公開判定保留） |
+| T45 | 公開前の残余障害・CVE・TLS再監査 | T44 | 未着手（T44統合待ち） |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -1006,7 +1007,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T43 — 実ストレージ・境界/障害横断・配布方針
 
-- 状態: レビュー待ち（初版公開の残件はT44、サポート期間は判断待ち）
+- 状態: 統合済み（初版公開の残件はT44、サポート期間は判断待ち）
 - ブランチ: `task/T43-release-hardening`
 - worktree: `.worktrees/T43-release-hardening`
 - 依存: T41、T42
@@ -1024,10 +1025,27 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T44 — 公開前の複合障害・配布・ライセンス仕上げ
 
-- 状態: 未着手
+- 状態: レビュー待ち（公開判定保留。法務・公開条件は未達）
 - 依存: T43レビュー・統合後
 - 対応仕様: 第5・6節の未実証範囲、配布物と法務上の公開条件
+- ブランチ: `task/T44-final-hardening`
+- worktree: `.worktrees/T44-final-hardening`
 
 **実装・検証すること**: T43変更を含む7役割のLinux release imageをcleanなsource snapshotと`Cargo.lock`からbuildし、非root/read-onlyで起動する。実PostgreSQL・実S3・SMTP sink・Collectorを同時に接続し、別HTTP/gRPC/worker/Channel/cleanup processで同時更新・worker強制終了/再取得・DB/SMTP/S3/Collector停止と復旧・reset後WebSocket失効・認証付きgRPC→workerの並行trace context分離を故障注入する。server 504/gRPC deadline後のDB/SMTP副作用と重複抑止境界、10 MiB添付/11 MiB本文/queue/connection上限を実測し、固定条件で性能を再計測する。外部TLS relay・クラウドIAM/署名等は安全な検証環境がある場合のみ実施し、未実施なら限定と記す。
 
 **配布監査と完了条件**: 実際のrelease targetごとにCargo依存・同梱資産/ベースイメージのライセンスを棚卸し、権利者を確認したKougaライセンス本文、third-party notices、SBOMを整備して法務レビューへ渡す。脆弱性・MSRV・再現可能なtag/commit・移行順序も確認する。サポート期間/EOLはユーザー判断を受けて初版公開前に文書化する。仕様第6節14件を単一配布Taskboardで再判定し、未達があれば公開判定を保留する。push/deploy/公開は別途明示依頼があるまで行わない。
+
+**T44検証結果（公開判定保留）**: 現行CLIで再生成したTaskboardを最終clean commit `320082b`のsource snapshotへ固定し、実DB全テスト・実S3専用テスト・fmt/全target Clippy・OpenAPI差分検査を実施。同snapshotから7役割Linux/arm64 imageをbuildし、全役割の非root/read-only起動、実DB・実S3・SMTP sinkでgRPC→worker通知と添付メール配送を確認。先行故障試験と最終image IDが同じ5役割を照合し、DB/S3停止・復旧、失敗後清掃、実worker kill→lease再取得、10/11 MiB境界の結果を継承。生成fixtureのdebug統合テストでserver 504とgRPC deadline後のDB/job確定が成功。最終imageの認証付きHTTP/gRPC並行作成から別workerへの2 trace分離、生成fixtureのreset後WebSocket close、固定条件のHTTP＋Collector軽量性能も再測定。結果・試験条件・未達は[再監査](release-verification.md)のT44節に記録。役割別Rust依存CycloneDX候補と7 imageのDebian OS package inventoryは[配布方針](distribution-compatibility.md)に記録。Kouga権利者/ライセンス本文、法的third-party notices、CVE scan、SMTP受理直後故障、全役割同時復旧、外部TLS/クラウドIAM、14件一括合格は未完了。公開可能とは判定しない。
+
+### T45 — 公開前の残余障害・CVE・TLS再監査
+
+- 状態: 未着手（T44のレビュー・main統合待ち）
+- 依存: T44
+- 対応仕様: 第5・6節の残余故障・セキュリティ・運用条件
+- ブランチ/worktree: 着手時に`task/T45-release-residual-audit`/`.worktrees/T45-release-residual-audit`を作成
+
+**故障・復旧**: T44のcommit固定生成Taskboardと7役割imageを基準に、専用DB・S3・SMTP sink・OTLP Collectorをローカル隔離で用意する。SMTPがDATAを250受理した直後・queue ack前にworkerをkillする決定的な故障窓をテスト専用の手段で作り、再取得時のDB効果1回とメール受理回数（重複可能性）を別々に記録する。全役割processを同時停止・再起動し、DB/S3/SMTP/Collectorを順次停止・復旧させて`/ready`、job lease、添付清掃、OTLP再開を観測する。失敗時もデータ・秘密・利用者への外部送信を壊さない隔離条件を守る。前タスクの個別故障証拠と同時複合試験を混同しない。キュー/DB接続/gRPC/WSの上限は境界値と1超過をそれぞれ測り、固定条件の軽量性能を再計測する。
+
+**依存・TLS監査**: 最新脆弱性DBで7役割のOS imageと役割別Rust依存を走査し、DB版・取得日時・image digest・検出件数・未対応理由を記録する。既知の重大/高リスクは修正または根拠付き保留とし、スキャナ未検出の静的Rust依存を「脆弱性なし」と扱わない。ローカルの使い捨てCAと検証用SMTP TLS relayで証明書検証、認証成功・失敗、無効証明書拒否を確認する。実クラウドIAM/署名や対外サービス送信はこのカードの許可範囲に含めず、必要ならユーザーの別途指示を得る。CA bundle/Swagger UI/OS/Rust素材のライセンスとNOTICE本文の出典を棚卸しするが、権利者・法務判断を推定しない。
+
+**完了条件**: 再現コマンドと失敗注入手順、実測値、既知の未達を`release-verification.md`へ追記し、変更したRustにはfmt/Clippy/全workspace testと実サービス統合テストを実施する。Kouga本体のライセンス本文・著作権者、法的third-party noticesの承認、0.xサポート期間/EOLは**ユーザー回答待ちの別の公開判断**として残す。T45の技術試験が完了しても、これらと仕様第6節の全条件が揃うまで公開可能とは判定せず、push/deploy/公開は行わない。

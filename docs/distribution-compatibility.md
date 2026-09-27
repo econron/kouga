@@ -4,6 +4,8 @@ Kougaのcrateは現時点でcrates.ioに公開していない。`kouga new`が�
 
 Dockerは生成済みDockerfileを維持し、アプリから`docker build --build-context kouga=./vendor/kouga --target http ...`を実行する。named contextに同じsnapshotを渡し、アプリのbuild context内のvendor copyを実行用イメージへ入れない。各targetは必要なbinaryだけを最終イメージへ含む。snapshot更新ではまずKouga側でcommitを確定し、新しい空のアプリまたはレビュー済みの差分で再生成・再packageする。`package-source.sh`は既存vendorを自動置換しない。現時点でGitHub release、crate publish、registry pushは行っていない。
 
+生成のたびに認証migrationのtimestampが異なる場合がある。異なる生成Taskboardを同じ既存DBへ向けると履歴不一致になるため、**配布後は同じ生成アプリのソース、`vendor/kouga` snapshot、migration、`Cargo.lock`を一組として更新する**。再生成アプリの検証には新DBを使い、既存アプリのDBへ無検討に接続しない。
+
 ## 互換性と更新順序
 
 - Rust最低版は1.94.0、edition 2024。0.x期間中は同じminor内のpatchで公開Rust API、生成CLIの入力、設定名、既存JSON error codeを破壊しない。新しいminorでは破壊的変更を許すが、変更表と移行手順を先に出す。1.0以降の安定期間は公開前に再定義する。現時点でサポート済みリリース系列は存在しない。
@@ -18,3 +20,11 @@ Dockerは生成済みDockerfileを維持し、アプリから`docker build --bui
 `cargo +1.94.0 metadata --locked --offline --format-version 1`でKouga workspaceのregistry由来404 packageを列挙し、`license`と`license_file`の両方が欠落するpackageは0件だった。再現用の確認式は`cargo +1.94.0 metadata --locked --offline --format-version 1 | jq '[.packages[] | select(.source != null)] | length'`と、同じmetadataの`[.packages[] | select(.source != null and .license == null and .license_file == null)] | length`で、それぞれ404/0となる。主な式は`MIT OR Apache-2.0` 221件、`MIT` 77件、`Apache-2.0 OR MIT` 23件、`Unicode-3.0` 18件、`Apache-2.0` 16件で、残り49件にはBSD、ISC、Zlib、CDLA-Permissive-2.0等が含まれる。`r-efi`等の選択肢にLGPLが含まれていても、MIT/Apacheを選べる式である。これは**ライセンス適合の法的承認ではない**。metadataは全workspaceの候補依存であり、release targetごとの実際のリンク/同梱、ライセンス本文、notice義務、ベースイメージOS packageやvendored Swagger UI素材を網羅しない。公開前にtarget別SBOM/third-party noticesを生成・レビューする。
 
 Kouga workspaceは`MIT OR Apache-2.0`を宣言する一方、現在のGit追跡ファイルにはトップレベルのライセンス本文がない。公開前に権利者を確定し、MITとApache-2.0本文を追加する必要がある。Swagger UI vendored素材とOpenAPI schemaの版・checksum・ライセンス参照は[API契約](api-contracts.md)に記録済み。検証用SeaweedFSコンテナはKougaの配布物へ含めない。実クラウド、外部TLS relay、全プラットフォームの法務・脆弱性監査は未実施。
+
+### T44の役割別Rust依存インベントリ（法務承認前）
+
+ソースsnapshot化したTaskboardに対し、Python 3.11以上で`python3.12 examples/taskboard/release-inventory.py APP_DIRECTORY OUTPUT_DIRECTORY`を実行すると、7つのDocker targetごとにCycloneDX 1.6 JSONを出力する。`Cargo.lock`と`cargo tree --target aarch64-unknown-linux-gnu -e normal --locked --offline`を照合し、固定したKouga commit、registry checksum、Cargo metadataのライセンス申告を記録する。`admin`と`http`、2種類のworkerはそれぞれ同じCargo packageの通常依存をビルドするため、同じ候補集合となる。これは**リンク済みbinaryの厳密な同梱一覧ではなく、Cargo通常依存の候補インベントリ**である。ビルド依存・dev依存は含めず、ベースイメージのDebian package、CA証明書、Swagger UI等の埋込素材、実際の権利者/notice義務は別途監査する。生成JSONをそのまま法的なthird-party noticesや完成SBOMとして公開しない。
+
+T44の最終clean commit `320082b861416cf04a6e02bdd4f82d15adfe5e48`から固定したTaskboardでのRust package候補はHTTP/admin各296、gRPC 246、認証/通知worker各245、Channel 186、storage cleanup 192。前段の`84a4d31` snapshotと件数は一致。ローカルTaskboard packageはライセンス未申告。T43の古いsnapshotでのworker 221件は現行結果として使わない。Kouga本体のライセンス本文・著作権者は権利者確認後に確定し、未確認のまま推定して追加しない。
+
+同じ7つのLinux/arm64 release imageをTrivy 0.66の`--scanners license --format cyclonedx --skip-db-update --offline-scan`で個別に棚卸ししたところ、各imageでDebian 12.15のOS package 88件とOS component 1件が得られた。最終固定commitでIDが変わったadmin/gRPCも再走査し、それぞれ同じ89 component、未分類はOS componentと`libcrypt1`、`libgcc-s1`、`libstdc++6`だった。同一image IDの残り5役割は先行走査の結果を引き継ぐ。Trivyは静的Rust binaryからCargo packageを検出しなかったため、上記のRust候補インベントリと**両方**を法務レビューに渡す。3つのOS packageはimage内の`/usr/share/doc/<package>/copyright`が存在することを確認したが、内容と義務は未判定。ビルドステージからコピーするCA bundle、埋込Swagger UI、OpenAPI schemaと各copyright/NOTICE義務も別途確認が必要。これらの候補インベントリは権利者を確定したthird-party notices本文の代わりにならない。脆弱性DBを用いた現在のCVEスキャンも未実施である。
