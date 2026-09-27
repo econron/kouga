@@ -142,6 +142,31 @@ async fn smtp_accepts_and_reports_rejection() {
 }
 
 #[tokio::test]
+async fn smtp_transfers_text_html_and_attachment() {
+    let (port, server) = smtp_server("250 accepted\r\n", false).await;
+    let html = render_html("<p>{{ name }}</p>", serde_json::json!({"name": "<test>"})).unwrap();
+    let message = mail()
+        .html(html)
+        .attach(
+            "report.txt",
+            ContentType::TEXT_PLAIN,
+            b"attachment content".to_vec(),
+        )
+        .unwrap();
+    SmtpMailer::insecure_local(port)
+        .deliver(&message)
+        .await
+        .unwrap();
+    let lines = server.await.unwrap().join("\n");
+    assert!(lines.contains("multipart/mixed"));
+    assert!(lines.contains("multipart/alternative"));
+    assert!(lines.contains("report.txt"));
+    assert!(lines.contains("attachment content"));
+    assert!(lines.contains("&lt;test&gt;"));
+    assert!(!lines.contains("<test>"));
+}
+
+#[tokio::test]
 async fn starttls_does_not_downgrade() {
     let (port, server) = smtp_server("250 accepted\r\n", true).await;
     let mailer = SmtpMailer::starttls("localhost", port, None).unwrap();

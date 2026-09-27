@@ -33,6 +33,7 @@ cp "$fixture_dir/overlay/migrations/20990101000001_task_notices.down.sql" "$dest
 cp "$fixture_dir/overlay/src/board.rs" "$destination/src/board.rs"
 cp "$fixture_dir/overlay/src/observability.rs" "$destination/src/observability.rs"
 cp "$fixture_dir/overlay/src/attachments.rs" "$destination/src/attachments.rs"
+cp "$fixture_dir/overlay/src/storage.rs" "$destination/src/storage.rs"
 cp "$fixture_dir/overlay/src/realtime.rs" "$destination/src/realtime.rs"
 cp "$fixture_dir/overlay/src/bin/task-complete.rs" "$destination/src/bin/task-complete.rs"
 cp "$fixture_dir/overlay/src/bin/task-seed.rs" "$destination/src/bin/task-seed.rs"
@@ -42,9 +43,11 @@ cp "$fixture_dir/overlay/tests/taskboard.rs" "$destination/tests/taskboard.rs"
 cp "$fixture_dir/overlay/tests/observability.rs" "$destination/tests/observability.rs"
 cp "$fixture_dir/overlay/tests/observability_otlp.rs" "$destination/tests/observability_otlp.rs"
 cp "$fixture_dir/overlay/tests/attachment_channel.rs" "$destination/tests/attachment_channel.rs"
+cp "$fixture_dir/overlay/tests/storage_s3.rs" "$destination/tests/storage_s3.rs"
 cp "$fixture_dir/overlay/tests/task_notice.rs" "$destination/tests/task_notice.rs"
 mkdir -p "$destination/apps/worker/tests"
 cp "$fixture_dir/overlay/apps/worker/tests/task_notice.rs" "$destination/apps/worker/tests/task_notice.rs"
+cp "$fixture_dir/overlay/apps/worker/tests/attachment_mail.rs" "$destination/apps/worker/tests/attachment_mail.rs"
 cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.up.sql" "$destination/migrations/20990101000000_taskboard.up.sql"
 cp "$fixture_dir/overlay/migrations/20990101000000_taskboard.down.sql" "$destination/migrations/20990101000000_taskboard.down.sql"
 cp "$fixture_dir/overlay/migrations/20990101000002_taskboard_attachments.up.sql" "$destination/migrations/20990101000002_taskboard_attachments.up.sql"
@@ -54,6 +57,7 @@ bash "$fixture_dir/enable-images.sh" "$destination" "$repo_dir"
 sed -i.bak '1i\
 pub mod board;\
 pub mod attachments;\
+pub mod storage;\
 pub mod realtime;\
 pub mod observability;\
 ' "$destination/src/lib.rs"
@@ -73,6 +77,14 @@ kouga-channel = { path = "'"$repo_dir"'/crates/kouga-channel" }\
 sed -i.bak '/\[dependencies\]/a\
 opentelemetry = { version = "=0.33.0", default-features = false, features = ["metrics"] }\
 tracing = "=0.1.44"\
+futures-util = "=0.3.34"\
+kouga-auth = { path = "'"$repo_dir"'/crates/kouga-auth" }\
+kouga-storage = { path = "'"$repo_dir"'/crates/kouga-storage" }\
+' "$destination/apps/worker/Cargo.toml"
+rm "$destination/apps/worker/Cargo.toml.bak"
+sed -i.bak '/\[dev-dependencies\]/a\
+bytes = "=1.12.1"\
+kouga-queue = { path = "'"$repo_dir"'/crates/kouga-queue" }\
 ' "$destination/apps/worker/Cargo.toml"
 rm "$destination/apps/worker/Cargo.toml.bak"
 sed -i.bak 's/telemetry.shutdown(std::time::Duration::from_secs(5)).await?;/let _ = telemetry.shutdown(std::time::Duration::from_secs(5)).await;/' "$destination/src/bin/server.rs"

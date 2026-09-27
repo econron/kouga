@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T40、T42統合済み。T41はレビュー待ち。T34/T40監査で初版未達と判定し、T41以降で残件を追跡
+状態: T00〜T42統合済み。T43はレビュー待ち、T44は未着手。T34/T40/T43監査で初版未達と判定し、公開前の残件を追跡
 対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -80,9 +80,10 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T38 | 共通業務処理へのgRPC入口 | T35 | 統合済み |
 | T39 | DB管理CLIの残項目 | T34 | 統合済み |
 | T40 | 初版の残件再監査 | T36、T37、T38、T39 | 統合済み |
-| T41 | Taskboard全役割の独立イメージ | T40 | レビュー待ち |
+| T41 | Taskboard全役割の独立イメージ | T40 | 統合済み |
 | T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 統合済み |
-| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 未着手 |
+| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | レビュー待ち（限定事項はT44） |
+| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | 未着手 |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -1005,7 +1006,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T43 — 実ストレージ・境界/障害横断・配布方針
 
-- 状態: 未着手
+- 状態: レビュー待ち（初版公開の残件はT44、サポート期間は判断待ち）
 - ブランチ: `task/T43-release-hardening`
 - worktree: `.worktrees/T43-release-hardening`
 - 依存: T41、T42
@@ -1014,3 +1015,19 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 **実装すること**: TaskboardのS3互換storageを実サービスで確認し、複数process/同時更新、worker/SMTP/DB/Collector障害・再起動、添付付きメール、タイムアウト後の副作用と境界上限を統合イメージで再検証する。ローカル絶対path依存を前提としない配布方式、Kouga/生成コード/ジョブpayloadの互換性・更新順序・サポート期間を定め、公開前のライセンス/依存素材監査を行う。
 
 **完了条件**: 第5節の制約と第6節14シナリオを単一アプリで再監査し、未達/実クラウド未検証を明示。Rust 1.94、Linuxイメージ、実サービス、性能の再現手順を残す。実クラウドdeployや公開は別途明示依頼があるまで行わない。
+
+**T43実装・公開API**: `kouga_storage::AmazonS3Builder`を公開し、TaskboardのHTTP/清掃/通知workerが共通`BOARD_STORAGE_BACKEND=local|s3`設定を使用する。S3ではbucket/region/custom endpoint、AWS標準資格情報を使用し、本番のHTTP許可を拒否する。Taskboardには所有者限定`POST /tasks/{id}/attachments/{file_id}/email`（202、`data.job_id`）と`taskboard.attachment_mail` v1 jobを追加。HTTPはjob投入のみ、別workerが所有者/添付状態を再確認して実storageから取得しSMTP送信する。`package-source.sh`はcleanなKouga commitの追跡済みCargo/cratesソースだけをアプリ内へsnapshot化し、相対path依存、nested workspace除外、commit記録を追加する。既存snapshotを上書きしない。Kougaの汎用`kouga new`が最初から相対pathになるわけではない。公開API変更と使い方・互換性・更新順序は[配布方針](distribution-compatibility.md)とTaskboard READMEを参照。
+
+**T43検証**: Rust 1.94のKouga本体fmt、全target Clippy `-D warnings`、専用PostgreSQL 17＋実S3（SeaweedFS）付きworkspace全テスト成功（本体Rustの最終変更後）。生成Taskboard Dも全workspace test、全target Clippy、OpenAPI generate/check成功。最後に追加したdebug/test用timeout hook後は生成fixture全target Clippy/fmtと実DB＋S3 `storage_s3`を再実行して成功し、全workspace test/OpenAPI checkはhook前の成功を根拠とする。最新OpenAPI check再実行は容量3.8 GiBで中断した。`kouga-storage`で11 MiB分割保存/署名URL/削除失敗→清掃、生成Taskboardで認証付きS3 upload/download、別router instance共有、他owner 404、危険なファイル名拒否、10 MiB超過413、S3障害時503/非公開/清掃を実行。別worker processがS3添付をMIMEとしてloopback SMTP sinkへ実配送し、偽造owner/削除済み添付は送らない。job確定後に応答を遅らせたクライアントdeadline試験では100 ms timeout後もjobがDBに残存。通常依存treeでHTTPにSMTP/worker、workerにHTTP/OpenAPIが含まれないことを確認。clean commitから新規Taskboardを別path生成・snapshot化し、1.2 MiBのvendorに`.git`/`target`/`.env`と絶対Cargo pathがないこと、全workspace `cargo check --locked --offline`および同snapshotの実DB＋S3試験成功を確認。二重package実行は既存snapshot保護で終了2。実S3用Dockerコンテナ`kouga-t43-s3`と専用DB`kouga-t43-postgres`は試験後に停止し、削除せず残置する。具体コマンド/証拠と14シナリオ判定は[再監査](release-verification.md)冒頭に記録。
+
+**公開前残件・未検証**: T41のLinux/arm64全役割イメージはT42統合版までの証拠であり、T43 S3/添付メール変更版imageのbuild/非root read-only実起動はディスク容量を優先して未実施。実クラウド、外部TLS relay、全役割同時障害/再起動、複数processの同時更新、認証付きgRPC→worker並行trace context分離、サーバー504/gRPC deadline後・SMTP受理後の副作用、S3/worker/Collectorを同時に動かす性能計測は未実施。ライセンスmetadataはregistry由来404 packageで欠落0だが、Kougaライセンス本文・third-party notices/SBOMは未整備。0.x公開後のサポート期間/EOLは対外的な約束となるためユーザー判断待ち。未実証の必須範囲はT44に引き継ぐ。**初版公開可能とは判定しない**。push/deployなし。
+
+### T44 — 公開前の複合障害・配布・ライセンス仕上げ
+
+- 状態: 未着手
+- 依存: T43レビュー・統合後
+- 対応仕様: 第5・6節の未実証範囲、配布物と法務上の公開条件
+
+**実装・検証すること**: T43変更を含む7役割のLinux release imageをcleanなsource snapshotと`Cargo.lock`からbuildし、非root/read-onlyで起動する。実PostgreSQL・実S3・SMTP sink・Collectorを同時に接続し、別HTTP/gRPC/worker/Channel/cleanup processで同時更新・worker強制終了/再取得・DB/SMTP/S3/Collector停止と復旧・reset後WebSocket失効・認証付きgRPC→workerの並行trace context分離を故障注入する。server 504/gRPC deadline後のDB/SMTP副作用と重複抑止境界、10 MiB添付/11 MiB本文/queue/connection上限を実測し、固定条件で性能を再計測する。外部TLS relay・クラウドIAM/署名等は安全な検証環境がある場合のみ実施し、未実施なら限定と記す。
+
+**配布監査と完了条件**: 実際のrelease targetごとにCargo依存・同梱資産/ベースイメージのライセンスを棚卸し、権利者を確認したKougaライセンス本文、third-party notices、SBOMを整備して法務レビューへ渡す。脆弱性・MSRV・再現可能なtag/commit・移行順序も確認する。サポート期間/EOLはユーザー判断を受けて初版公開前に文書化する。仕様第6節14件を単一配布Taskboardで再判定し、未達があれば公開判定を保留する。push/deploy/公開は別途明示依頼があるまで行わない。
