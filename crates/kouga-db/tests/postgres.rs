@@ -6,6 +6,20 @@ use kouga_db::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[tokio::test]
+async fn pool_one_connection_admits_one_and_times_out_the_next() {
+    let Ok(url) = std::env::var("KOUGA_TEST_DATABASE_URL") else {
+        return;
+    };
+    let db = connect(&url, 1, Duration::from_secs(1)).await.unwrap();
+    let held = db.acquire().await.unwrap();
+    let second = db.acquire().await;
+    assert!(matches!(second, Err(sqlx::Error::PoolTimedOut)));
+    drop(held);
+    let recovered = db.acquire().await.unwrap();
+    drop(recovered);
+}
+
 // Only this test's generated table name (ASCII digits and underscores) is interpolated.
 fn safe_test_sql(sql: String) -> sqlx::AssertSqlSafe<String> {
     sqlx::AssertSqlSafe(sql)

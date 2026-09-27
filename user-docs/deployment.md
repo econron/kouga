@@ -46,6 +46,8 @@ docker run --rm \
 
 workerは別コンテナで起動し、同じ外部PostgreSQLを`DATABASE_URL`に指定します。メールworkerには`KOUGA_SMTP_HOST`、`KOUGA_MAIL_FROM`、`KOUGA_RESET_URL`などを実行時に渡します。ワンショット実行は`docker run ... taskboard-worker --once`です。管理targetは`docker run ... taskboard-admin`でmigrationを実行し、HTTP起動時には実行しません。
 
+常駐workerはDB停止中に接続エラーで終了する場合があります。DB復旧だけで同じprocessが再接続し続ける保証はないため、配備先の再起動ポリシーで終了したworkerを起動し直し、queueの`retry`/`dead`件数も監視してください。長時間のSMTP障害で`dead`になったジョブは原因解消後に運用コマンドで明示的に再投入します。SMTP受理後・queue ack前の停止では重複メールがあり得ます（[配送の境界](jobs-and-mail.md)）。
+
 SMTPのTLS検証は有効のままです。社内CAなどを信頼させる場合は、CAのPEMファイルを読み取り専用でマウントし、メールworkerに`SSL_CERT_FILE`でそのパスを指定します。信頼できない証明書を許容する設定はありません。
 
 イメージの入口がビルド済みバイナリを起動します。本番コンテナ内で`kouga server`やCargoを実行する必要はありません。
