@@ -12,3 +12,11 @@ pub struct TaskCreatedV2 {
     pub task_id: Uuid,
     pub owner_id: Uuid,
 }
+
+/// Explicit owner request to email one already-attached file.
+#[kouga_job::job(name = "taskboard.attachment_mail", version = 1, queue = "task-mail")]
+pub struct AttachmentMailV1 {
+    pub task_id: Uuid,
+    pub file_id: Uuid,
+    pub owner_id: Uuid,
+}

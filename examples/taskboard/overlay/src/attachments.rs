@@ -12,6 +12,7 @@ use kouga_http::{
     Router, State, endpoint,
 };
 use kouga_model::{Db, Uuid, sqlx};
+use kouga_queue::Enqueue;
 use kouga_storage::{FileKind, Storage, StorageError, Upload};
 use kouga_validation::{ApiSchema, SchemaDirection};
 use std::{io, time::Duration};
@@ -239,6 +240,61 @@ fn destroy_endpoint() -> Endpoint<Db> {
         attachment_path(Operation::new("board.attachments.destroy").response::<NoContent>()),
     )
 }
+
+pub struct QueuedMail(pub Uuid);
+impl ApiOutput for QueuedMail {
+    fn metadata() -> ResponseMeta {
+        ResponseMeta {
+            status: 202,
+            content_type: Some("application/json"),
+            data_schema: Some(
+                serde_json::json!({"type":"object","required":["job_id"],"properties":{"job_id":{"type":"string","format":"uuid"}}}),
+            ),
+            paginated: false,
+        }
+    }
+}
+impl IntoResponse for QueuedMail {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::ACCEPTED,
+            axum::Json(serde_json::json!({"data":{"job_id":self.0}})),
+        )
+            .into_response()
+    }
+}
+async fn mail_attachment(
+    State(db): State<Db>,
+    Extension(actor): Extension<CurrentUser>,
+    Path(path): Path<AttachmentPath>,
+) -> Result<QueuedMail, Error> {
+    let task_id = parse(&path.id)?;
+    let file_id = parse(&path.file_id)?;
+    owned_attachment(&db, actor.id, task_id, file_id).await?;
+    let job_id = app_contracts::task_notice::AttachmentMailV1 {
+        task_id,
+        file_id,
+        owner_id: actor.id,
+    }
+    .enqueue(&db)
+    .await
+    .map_err(|_| unavailable())?;
+    // Integration tests can hold the response after the durable enqueue.
+    if cfg!(debug_assertions)
+        && std::env::var("KOUGA_ENV").as_deref() == Ok("test")
+        && let Ok(ms) = std::env::var("TASKBOARD_TEST_PAUSE_AFTER_ATTACHMENT_ENQUEUE_MS")
+        && let Ok(ms) = ms.parse::<u64>()
+    {
+        tokio::time::sleep(Duration::from_millis(ms.min(30_000))).await;
+    }
+    Ok(QueuedMail(job_id))
+}
+fn mail_attachment_endpoint() -> Endpoint<Db> {
+    Endpoint::handler(
+        mail_attachment,
+        attachment_path(Operation::new("board.attachments.email").response::<QueuedMail>()),
+    )
+}
 fn attachment_path(mut operation: Operation) -> Operation {
     operation.path_schema = Some(
         serde_json::json!({"type":"object","required":["id","file_id"],"properties":{"id":{"type":"string","format":"uuid"},"file_id":{"type":"string","format":"uuid"}}}),
@@ -270,7 +326,12 @@ pub fn routes(router: Router<Db>) -> Router<Db> {
         .unwrap()
         .delete(
             "/tasks/{id}/attachments/{file_id}",
-            destroy_endpoint().middleware(guard),
+            destroy_endpoint().middleware(guard.clone()),
+        )
+        .unwrap()
+        .post(
+            "/tasks/{id}/attachments/{file_id}/email",
+            mail_attachment_endpoint().middleware(guard),
         )
         .unwrap()
 }

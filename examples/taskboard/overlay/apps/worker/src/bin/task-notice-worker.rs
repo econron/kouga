@@ -1,9 +1,14 @@
-use app_contracts::task_notice::{TaskCreatedV1, TaskCreatedV2};
+use app_contracts::task_notice::{AttachmentMailV1, TaskCreatedV1, TaskCreatedV2};
+use futures_util::StreamExt;
+use kouga_auth::CurrentUser;
 use kouga_mailer::{MailMessage, SmtpMailer};
 use kouga_model::{Db, Uuid, sqlx};
 use kouga_worker::{JobContext, JobError, Worker, WorkerOptions};
 use std::{sync::Arc, time::Duration};
 use tracing::Instrument;
+
+#[path = "../../../../src/storage.rs"]
+mod storage;
 
 struct State {
     db: Db,
@@ -76,6 +81,62 @@ async fn current(job: TaskCreatedV2, ctx: JobContext<State>) -> Result<(), JobEr
     process(job.task_id, Some(job.owner_id), ctx).await
 }
 
+async fn attachment_mail(job: AttachmentMailV1, ctx: JobContext<State>) -> Result<(), JobError> {
+    let state = &ctx.state;
+    let recipient: Option<String> = sqlx::query_scalar(
+        "SELECT u.email FROM tasks t JOIN users u ON u.id=t.owner_id \
+         JOIN kouga_files f ON f.record_type='tasks' AND f.record_id=t.id \
+         WHERE t.id=$1 AND t.owner_id=$2 AND f.id=$3 AND f.owner_id=$2 AND f.state='attached'",
+    )
+    .bind(job.task_id)
+    .bind(job.owner_id)
+    .bind(job.file_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| JobError::Retryable("attachment lookup failed"))?;
+    let Some(recipient) = recipient else {
+        // A deleted attachment is not mailed from a stale queued request.
+        return Ok(());
+    };
+    let storage = storage::open(state.db.clone())
+        .map_err(|_| JobError::Retryable("storage configuration unavailable"))?;
+    let download = match storage
+        .download(CurrentUser { id: job.owner_id }, job.file_id)
+        .await
+    {
+        Ok(download) => download,
+        Err(kouga_storage::StorageError::NotFound) => return Ok(()),
+        Err(_) => return Err(JobError::Retryable("attachment download failed")),
+    };
+    let mut bytes = Vec::new();
+    let mut stream = download.stream;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| JobError::Retryable("attachment stream failed"))?;
+        if bytes.len().saturating_add(chunk.len()) > 10 * 1024 * 1024 {
+            return Err(JobError::Permanent("attachment exceeds mail limit"));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let mime = download
+        .file
+        .content_type
+        .parse()
+        .map_err(|_| JobError::Permanent("invalid attachment content type"))?;
+    let mail = MailMessage::new(
+        &state.from,
+        &recipient,
+        "Task attachment",
+        "Your task attachment is enclosed.\n",
+    )
+    .and_then(|mail| mail.attach(download.file.original_name, mime, bytes))
+    .map_err(|_| JobError::Permanent("invalid attachment mail"))?;
+    mail.deliver(&state.mailer)
+        .await
+        .map_err(|_| JobError::Retryable("attachment mail delivery failed"))?;
+    tracing::info!("taskboard attachment mail delivered");
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = kouga_telemetry::TelemetryConfig::from_env()?;
@@ -124,6 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut worker = Worker::new(db, state, options)?;
     worker.register::<TaskCreatedV1>(old)?;
     worker.register::<TaskCreatedV2>(current)?;
+    worker.register::<AttachmentMailV1>(attachment_mail)?;
     let cancellation = tokio_util::sync::CancellationToken::new();
     let signal = cancellation.clone();
     tokio::spawn(async move {

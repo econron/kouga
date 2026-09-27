@@ -125,6 +125,23 @@ async fn s3_owner_failure_and_cleanup_across_app_instances() {
         .status(),
         StatusCode::BAD_REQUEST
     );
+    let mut oversized = b"--s3\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.png\"\r\nContent-Type: image/png\r\n\r\n".to_vec();
+    oversized.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+    oversized.resize(oversized.len() + 10 * 1024 * 1024 - 7, b'x');
+    oversized.extend_from_slice(b"\r\n--s3--\r\n");
+    assert_eq!(
+        send(
+            &first,
+            "POST",
+            &url,
+            oversized,
+            Some(&alice),
+            "multipart/form-data; boundary=s3"
+        )
+        .await
+        .status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
     let mut multipart = b"--s3\r\nContent-Disposition: form-data; name=\"file\"; filename=\"safe.png\"\r\nContent-Type: image/png\r\n\r\n".to_vec();
     multipart.extend_from_slice(png);
     multipart.extend_from_slice(b"\r\n--s3--\r\n");
@@ -174,6 +191,85 @@ async fn s3_owner_failure_and_cleanup_across_app_instances() {
         &to_bytes(downloaded.into_body(), 1024).await.unwrap()[..],
         png
     );
+
+    let mail_url = format!("{file_url}/email");
+    assert_eq!(
+        send(
+            &second,
+            "POST",
+            &mail_url,
+            vec![],
+            Some(&bob),
+            "application/json"
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    let queued = send(
+        &first,
+        "POST",
+        &mail_url,
+        vec![],
+        Some(&alice),
+        "application/json",
+    )
+    .await;
+    assert_eq!(queued.status(), StatusCode::ACCEPTED);
+    let queued_id = json(queued).await["data"]["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let queued_name: String = sqlx::query_scalar("SELECT name FROM kouga_jobs WHERE id=$1")
+        .bind(Uuid::parse_str(&queued_id).unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(queued_name, "taskboard.attachment_mail");
+
+    // The client may time out after enqueue commits. Cancelling the HTTP future
+    // must not be mistaken for rolling back that durable side effect.
+    unsafe { std::env::set_var("TASKBOARD_TEST_PAUSE_AFTER_ATTACHMENT_ENQUEUE_MS", "2000") };
+    let mut pending = Box::pin(send(
+        &second,
+        "POST",
+        &mail_url,
+        vec![],
+        Some(&alice),
+        "application/json",
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            tokio::select! {
+                _ = &mut pending => panic!("response arrived before timeout check"),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {
+                    let count: i64 = sqlx::query_scalar(
+                        "SELECT count(*) FROM kouga_jobs WHERE name='taskboard.attachment_mail'",
+                    )
+                    .fetch_one(&db)
+                    .await
+                    .unwrap();
+                    if count == 2 { break; }
+                }
+            }
+        }
+    })
+    .await
+    .expect("second mail job was not durably enqueued");
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut pending)
+            .await
+            .is_err()
+    );
+    drop(pending);
+    unsafe { std::env::remove_var("TASKBOARD_TEST_PAUSE_AFTER_ATTACHMENT_ENQUEUE_MS") };
+    let durable_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM kouga_jobs WHERE name='taskboard.attachment_mail'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(durable_count, 2);
 
     let endpoint = std::env::var("BOARD_S3_ENDPOINT").unwrap();
     unsafe { std::env::set_var("BOARD_S3_ENDPOINT", "http://127.0.0.1:1") };
