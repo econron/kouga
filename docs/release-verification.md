@@ -1,3 +1,23 @@
+# 初版再監査（T44・進行中）
+
+T44の作業ブランチは`task/T44-final-hardening`。以下はT43統合mainからの**途中結果**であり、初版公開可能の判定ではない。GitHub/registryへのpush、実クラウドdeploy、公開はしていない。検証環境はmacOS arm64上のDocker Desktop、Rust 1.94、専用PostgreSQL 17（`kouga_t44`）、SeaweedFS S3互換、ローカルSMTP sink。資格情報はDockerの既存テストコンテナから試験実行時だけ取得し、ログ・文書へ値を出さない。HTTP/workerは`KOUGA_ENV=test`と`BOARD_S3_ALLOW_HTTP=1`でローカルHTTP S3 endpointを使う。これは本番TLS/クラウドIAMの試験ではない。
+
+### 直接実証した範囲
+
+T44 source CLIを共有`CARGO_TARGET_DIR`で再ビルドして新規Taskboardを生成。旧共有CLIはT43 worktreeの絶対pathを埋め込んでおり、新生成時にT43/T44の同名crateがlockfile上で衝突したため使わなかった。現行CLIの生成物でfmt、全target Clippy `-D warnings`、専用実DBの生成workspace全テスト成功。S3専用`storage_s3`は全testへS3 envを付けずに分離して実SeaweedFSで成功。初回に全testへS3 envを混在させた失敗（local backend試験のファイル不存在）は環境設定ミスで、分離後に通過した。OpenAPIのRequest/認証差分検出→再生成→check成功。`package-source.sh`でclean commit `84a4d31`を`vendor/kouga`へ固定し、Cargo manifestに絶対pathがないことを確認した。後述のgRPC deadline/504テスト差分はこのcommitの**後**に追加したため、最終commit固定の新規snapshotと全試験は未完了。
+
+このsnapshotと`Cargo.lock`から`docker build --build-context kouga=./vendor/kouga --target TARGET`で7 targetすべてを個別ビルド。全imageはLinux/arm64、`USER 65532:65532`。展開サイズはadmin 101,381,817 B、HTTP 121,707,932 B、gRPC 107,090,668 B、認証worker 108,334,940 B、通知worker 110,760,540 B、Channel 103,604,164 B、清掃 107,216,988 B。全役割を`--read-only --tmpfs /tmp --memory 256m --cpus 2`で起動した。adminは専用DBへ5 migration、HTTP `/health`と`/ready`は200、別gRPCとChannelは稼働、認証workerは空queueの`--once`でexit 0、清掃は実S3設定のワンショットでexit 0。HTTP発行tokenを別gRPC imageへ渡したProject/Task作成が成功し、別通知worker imageがjobを処理して独立SMTP sinkに1件受理された。HTTP imageから所有者認証付き実S3 PNG添付を保存し、`attachment_mail` jobを別通知worker imageがS3から取得してSMTP sinkに配送した。2 jobの`status=succeeded`をDBで確認した。
+
+故障注入では専用DB停止中にHTTP `/ready=503`、`/health=200`、復旧後`/ready=200`。S3停止中の認証付きuploadは503、DBには`delete_pending`が1件残り、S3復旧後に別清掃imageが1件再処理し、正常な`attached`添付は保持された。通知workerを永続効果1件・job `running`の直後にコンテナ強制終了し、lease失効後に別read-only workerがattempt 2で再取得、DB効果は合計1回、SMTP sink受理は1回増、jobは`succeeded`となった。最初の10秒pause試行は停止窓を逃して先にjobが成功したため故障実証に数えず、30秒pauseの再試験を根拠とする。
+
+生成アプリの実DB/S3統合テストへ**debug build限定**の1秒`HttpOptions.timeout`と既存のenqueue後2秒pauseを組み合わせ、`POST .../attachments/{id}/email`のサーバー応答504を直接確認した。DBの同種job件数は2から3へ増え、504はcommit取消しを意味しない。生成gRPCサービスにはdebug buildかつ`KOUGA_ENV=test`限定のcommit後pauseを追加し、100 ms client deadlineで`DeadlineExceeded`を受けた後にもTaskと通知jobがcommitされたことを専用DBで確認した。両者とも**release imageでの故障注入ではない**。実S3 uploadは10 MiBちょうど201、10 MiB+1 Bは413。HTTP JSON本文は11 MiBちょうどサイズ制限を通過して不正JSONの400、11 MiB+1 Bは413。queue/接続/WebSocket/gRPC上限の同時境界は未実測。
+
+配布候補のRust依存は[配布方針](distribution-compatibility.md)の役割別CycloneDX生成スクリプトで記録。Trivy 0.66のオフラインlicense scanは各imageのDebian 12.15 OS package 88件＋OS componentを検出したが静的Rust依存は検出しないため両台帳が必要。`libcrypt1`、`libgcc-s1`、`libstdc++6`はlicense未分類でも同梱copyrightファイル有。法的notice義務、権利者、CA bundle/Swagger UI、現行脆弱性DBを使ったCVE監査は未完了。Kougaのライセンス本文/著作権者、公開後サポート期間/EOLはユーザー判断待ち。
+
+### 未完了の横断条件
+
+Collectorの停止・復旧を交えた認証付きHTTP/gRPC→worker並行trace context分離、reset後の実Channel socket失効、SMTP受理直後のack故障と重複境界、全役割同時停止/復旧、実外部TLS relayとクラウドIAM/署名、キュー/接続/gRPC/WS上限と固定条件の性能再計測は未実施。T43以前の個別試験証拠をT44の同時複合試験と混同しない。現在の7 imageは`84a4d31`固定で、その後のdebug-onlyテスト追加を含む最終source snapshotではない。最終固定commitで再生成・再監査するまで**第6節14件を単一配布物で合格とは判定しない**。
+
 # 初版再監査（T43）
 
 T43の作業ブランチは`task/T43-release-hardening`。この節はT41/T42統合後の同じ再生成可能なTaskboardに対する追加監査であり、T40以前の節は履歴である。判定は**公開前の残件あり**。今回の直接実証とT35〜T42の引継ぎ証拠を分けて記す。実クラウドdeploy、registry push、GitHub公開はしていない。

@@ -98,12 +98,17 @@ impl rpc::board_server::Board for BoardService {
         }
         let board = DomainBoard::new(self.db.clone());
         kouga_grpc::within_deadline(Duration::from_secs(5), async move {
-            board
-                .create_task(actor, project_id, &input.title)
-                .await
-                .map(task)
-                .map(Response::new)
-                .map_err(status)
+            let created = board.create_task(actor, project_id, &input.title).await;
+            // Debug-only fault injection: hold the response after the DB/job
+            // transaction commits so a client deadline can be tested safely.
+            if cfg!(debug_assertions)
+                && std::env::var("KOUGA_ENV").as_deref() == Ok("test")
+                && let Ok(ms) = std::env::var("TASKBOARD_TEST_PAUSE_AFTER_GRPC_CREATE_MS")
+                && let Ok(ms) = ms.parse::<u64>()
+            {
+                tokio::time::sleep(Duration::from_millis(ms.min(30_000))).await;
+            }
+            created.map(task).map(Response::new).map_err(status)
         })
         .await
     }

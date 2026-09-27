@@ -1,7 +1,7 @@
 # Kouga — worktree単位の開発タスク
 
 作成日: 2026-09-25  
-状態: T00〜T42統合済み。T43はレビュー待ち、T44は未着手。T34/T40/T43監査で初版未達と判定し、公開前の残件を追跡
+状態: T00〜T43統合済み。T44は進行中。T34/T40/T43監査で初版未達と判定し、公開前の残件を追跡
 対象: 初版の全機能（T00〜T34の当初計画と、監査後の残件）
 
 [仕様書](specification.md)と[利用者向けドキュメント](../user-docs/README.md)を実装するための作業単位です。本書の作成は、各タスクの実行・Git初期化・worktree作成を意味しません。
@@ -82,8 +82,8 @@ T03後のT04と、T07後のT08も並行可能。T04完了時にはT26（計測�
 | T40 | 初版の残件再監査 | T36、T37、T38、T39 | 統合済み |
 | T41 | Taskboard全役割の独立イメージ | T40 | 統合済み |
 | T42 | 単一アプリの観測・OpenAPI・運用経路 | T40 | 統合済み |
-| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | レビュー待ち（限定事項はT44） |
-| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | 未着手 |
+| T43 | 実ストレージ・境界/障害横断・配布方針 | T41、T42 | 統合済み（限定事項はT44） |
+| T44 | 公開前の複合障害・配布・ライセンス仕上げ | T43 | 進行中（公開判定保留） |
 
 ## 3. 共通の完了条件と引き継ぎ
 
@@ -1006,7 +1006,7 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T43 — 実ストレージ・境界/障害横断・配布方針
 
-- 状態: レビュー待ち（初版公開の残件はT44、サポート期間は判断待ち）
+- 状態: 統合済み（初版公開の残件はT44、サポート期間は判断待ち）
 - ブランチ: `task/T43-release-hardening`
 - worktree: `.worktrees/T43-release-hardening`
 - 依存: T41、T42
@@ -1024,10 +1024,14 @@ Rust 1.94 `fmt --check`、workspace `clippy --all-targets --locked --offline -- 
 
 ### T44 — 公開前の複合障害・配布・ライセンス仕上げ
 
-- 状態: 未着手
+- 状態: 進行中（公開判定保留）
 - 依存: T43レビュー・統合後
 - 対応仕様: 第5・6節の未実証範囲、配布物と法務上の公開条件
+- ブランチ: `task/T44-final-hardening`
+- worktree: `.worktrees/T44-final-hardening`
 
 **実装・検証すること**: T43変更を含む7役割のLinux release imageをcleanなsource snapshotと`Cargo.lock`からbuildし、非root/read-onlyで起動する。実PostgreSQL・実S3・SMTP sink・Collectorを同時に接続し、別HTTP/gRPC/worker/Channel/cleanup processで同時更新・worker強制終了/再取得・DB/SMTP/S3/Collector停止と復旧・reset後WebSocket失効・認証付きgRPC→workerの並行trace context分離を故障注入する。server 504/gRPC deadline後のDB/SMTP副作用と重複抑止境界、10 MiB添付/11 MiB本文/queue/connection上限を実測し、固定条件で性能を再計測する。外部TLS relay・クラウドIAM/署名等は安全な検証環境がある場合のみ実施し、未実施なら限定と記す。
 
 **配布監査と完了条件**: 実際のrelease targetごとにCargo依存・同梱資産/ベースイメージのライセンスを棚卸し、権利者を確認したKougaライセンス本文、third-party notices、SBOMを整備して法務レビューへ渡す。脆弱性・MSRV・再現可能なtag/commit・移行順序も確認する。サポート期間/EOLはユーザー判断を受けて初版公開前に文書化する。仕様第6節14件を単一配布Taskboardで再判定し、未達があれば公開判定を保留する。push/deploy/公開は別途明示依頼があるまで行わない。
+
+**T44途中経過**: 現行CLIでの再生成、実DB全テスト・実S3専用テスト・fmt/全target Clippy・OpenAPI差分検査を実施。clean commit `84a4d31`のソースsnapshotから7役割Linux/arm64 imageをbuildし、全役割の非root/read-only起動、実DB・実S3・SMTP sinkでgRPC→worker通知と添付メール配送を確認。DB/S3停止・復旧、失敗後清掃、実worker kill→lease再取得、10/11 MiB境界も実測。生成fixtureのdebug統合テストへserver 504とgRPC deadline後のDB/job確定試験を追加し、専用実DB/S3で成功。結果・試験条件・未達は[再監査](release-verification.md)のT44節に記録した。技術的な役割別Rust依存CycloneDX候補と7 imageのDebian OS package inventoryは[配布方針](distribution-compatibility.md)に記録。Kouga権利者/ライセンス本文、法的third-party notices、CVE scan、最終source commitの再snapshot、残りの複合障害・性能・14件一括判定は未完了。公開可能とは判定しない。
