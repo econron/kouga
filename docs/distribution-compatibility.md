@@ -27,4 +27,33 @@ Kouga workspaceは`MIT OR Apache-2.0`を宣言する一方、現在のGit追跡�
 
 T44の最終clean commit `320082b861416cf04a6e02bdd4f82d15adfe5e48`から固定したTaskboardでのRust package候補はHTTP/admin各296、gRPC 246、認証/通知worker各245、Channel 186、storage cleanup 192。前段の`84a4d31` snapshotと件数は一致。ローカルTaskboard packageはライセンス未申告。T43の古いsnapshotでのworker 221件は現行結果として使わない。Kouga本体のライセンス本文・著作権者は権利者確認後に確定し、未確認のまま推定して追加しない。
 
-同じ7つのLinux/arm64 release imageをTrivy 0.66の`--scanners license --format cyclonedx --skip-db-update --offline-scan`で個別に棚卸ししたところ、各imageでDebian 12.15のOS package 88件とOS component 1件が得られた。最終固定commitでIDが変わったadmin/gRPCも再走査し、それぞれ同じ89 component、未分類はOS componentと`libcrypt1`、`libgcc-s1`、`libstdc++6`だった。同一image IDの残り5役割は先行走査の結果を引き継ぐ。Trivyは静的Rust binaryからCargo packageを検出しなかったため、上記のRust候補インベントリと**両方**を法務レビューに渡す。3つのOS packageはimage内の`/usr/share/doc/<package>/copyright`が存在することを確認したが、内容と義務は未判定。ビルドステージからコピーするCA bundle、埋込Swagger UI、OpenAPI schemaと各copyright/NOTICE義務も別途確認が必要。これらの候補インベントリは権利者を確定したthird-party notices本文の代わりにならない。脆弱性DBを用いた現在のCVEスキャンも未実施である。
+同じ7つのLinux/arm64 release imageをTrivy 0.66の`--scanners license --format cyclonedx --skip-db-update --offline-scan`で個別に棚卸ししたところ、各imageでDebian 12.15のOS package 88件とOS component 1件が得られた。最終固定commitでIDが変わったadmin/gRPCも再走査し、それぞれ同じ89 component、未分類はOS componentと`libcrypt1`、`libgcc-s1`、`libstdc++6`だった。同一image IDの残り5役割は先行走査の結果を引き継ぐ。Trivyは静的Rust binaryからCargo packageを検出しなかったため、上記のRust候補インベントリと**両方**を法務レビューに渡す。3つのOS packageはimage内の`/usr/share/doc/<package>/copyright`が存在することを確認したが、内容と義務は未判定。ビルドステージからコピーするCA bundle、埋込Swagger UI、OpenAPI schemaと各copyright/NOTICE義務も別途確認が必要。これらの候補インベントリは権利者を確定したthird-party notices本文の代わりにならない。T45でのCVE結果を次節へ追記した。
+
+### T45の脆弱性・素材再監査（2026-09-27）
+
+Trivy **0.66.0**、vulnerability DB schema version 2、DB `UpdatedAt=2026-09-27T00:40:58.172367669Z`、`DownloadedAt=2026-09-27T01:59:55.499881Z`を固定し、T44節の7つの**個別image ID**を`trivy image --scanners vuln --severity CRITICAL,HIGH --skip-db-update --offline-scan --format json IMAGE`で走査した。7 imageは同一Debian 12.15 OS層（88 package）を持ち、**各imageあたり**CRITICAL 4件/HIGH 52件のpackage-CVE組合せ、合計56件、重複を除くCVE IDは18、対象package名17だった。7倍した392件を独立脆弱性として扱わない。検出は全てOS packageで、Trivyの`FixedVersion`は56件とも空。Trivy status内訳は`affected`48、`fix_deferred`7、`will_not_fix`1。これらはスキャナ時点の分類であり「修正不要」判断ではない。
+
+| CVE | severity | Debian 12 package（installed version） | Trivy status/修正表示 |
+|---|---|---|---|
+| CVE-2023-45853 | CRITICAL | `zlib1g` `1:1.2.13.dfsg-1` | `will_not_fix`/なし。Debian trackerはBookwormのminizipがbuiltされないためignoredと説明 |
+| CVE-2025-69720 | HIGH | `libtinfo6`, `ncurses-base`, `ncurses-bin` `6.4-4` | `affected`/なし |
+| CVE-2026-13221 | CRITICAL | `perl-base` `5.36.0-7+deb12u3` | `affected`/なし |
+| CVE-2026-16742 | HIGH | `libsystemd0`, `libudev1` `252.39-1~deb12u2` | `fix_deferred`/なし |
+| CVE-2026-41992 | HIGH | `gzip` `1.12-1` | `fix_deferred`/なし |
+| CVE-2026-42496 | CRITICAL | `perl-base` `5.36.0-7+deb12u3` | `fix_deferred`/なし |
+| CVE-2026-42497 | HIGH | `perl-base` 同上 | `fix_deferred`/なし |
+| CVE-2026-48962 | HIGH | `perl-base` 同上 | `affected`/なし |
+| CVE-2026-53613 | HIGH | util-linux由来の8 package（下記） | `affected`/なし |
+| CVE-2026-54369 | HIGH | `libacl1` `2.3.1-3` | `fix_deferred`/なし |
+| CVE-2026-57432, CVE-2026-57433 | HIGH各1 | `perl-base` 同上 | `affected`/なし |
+| CVE-2026-76642, CVE-2026-78408, CVE-2026-78409, CVE-2026-78410 | HIGH各8 | util-linux由来の8 package（下記） | `affected`/なし |
+| CVE-2026-8376 | CRITICAL | `perl-base` 同上 | `affected`/なし |
+| CVE-2026-9538 | HIGH | `perl-base` 同上 | `fix_deferred`/なし |
+
+util-linux由来8 packageは`bsdutils`, `libblkid1`, `libmount1`, `libsmartcols1`, `libuuid1`, `mount`, `util-linux`, `util-linux-extra`。installed versionは`bsdutils`と`util-linux`が`1:2.38.1-5+deb12u3`、残りが`2.38.1-5+deb12u3`。上表の「各8」はCVE IDごとに8 package-CVE組合せを意味し、5 IDで40件。CVE-2023-45853の限定は[Debian tracker](https://security-tracker.debian.org/tracker/CVE-2023-45853)で裏付けた。一方、[CVE-2026-13221](https://security-tracker.debian.org/tracker/CVE-2026-13221)と[CVE-2026-53613](https://security-tracker.debian.org/tracker/CVE-2026-53613)はBookwormがvulnerableであり、[CVE-2026-76642](https://security-tracker.debian.org/tracker/CVE-2026-76642)はTrixieにも残る。全18件の個別影響評価は未完了で、未解決の重大・高リスクを抱えたまま公開可能としない。
+
+同DBで`debian:trixie-slim@sha256:a99c…`（ローカルID `sha256:3fde…`）はCRITICAL 0/HIGH 43だった。`gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97`はCRITICAL/HIGH 0。T44固定binaryを一時Dockerfileでそのdistroless baseへ載せ替えた7つのLinux/arm64候補imageも、それぞれCRITICAL/HIGH 0だった。これは**当該Trivy DBとそのOS/component検出範囲のみ**の結果である。`trivy fs --scanners vuln --skip-db-update --offline-scan --severity CRITICAL,HIGH`で固定Taskboardのアプリ・vendored Kougaの2つのCargo.lockは0件だったが、静的Rust依存がimage scanでは検出されず、Rust依存にCVEがない保証ではない。役割別Cargo依存候補はT44のCycloneDXと合わせて評価する。
+
+distroless候補は専用DB/S3/TLS SMTP/Channel/cleanupまで7役割を非root/read-onlyで実起動したが、**linux/amd64、Lambda adapter、配布ライセンス/NOTICE、CA/DNSの対象環境網羅、全CVE継続監視は未完了**。従ってCLI生成Dockerfileの既定baseは変更しない。Bookworm imageの残余CVEを理由に公開判定も保留する。将来のbase変更はamd64/arm64両方とLambdaを含む別レビューで行い、既定Dockerfileと文書契約を同時更新する。
+
+素材の出典確認では、既定DockerfileのCA bundleはbuilderの`rust:1.94-bookworm`にある`ca-certificates`由来（builder側`/usr/share/doc/ca-certificates/copyright`）で、runtimeにコピーされるのは`/etc/ssl/certs/ca-certificates.crt`のみ。Swagger UIは`utoipa-swagger-ui-vendored 0.2.0`/`utoipa-swagger-ui 10.0.1`の埋込資産で、Cargo cacheに両crateの`LICENSE-MIT`と`LICENSE-APACHE`がある。Swagger UI元版・checksum・OpenAPI schema参照は[API契約](api-contracts.md)参照。OS packageのcopyright本文、CA、Swagger UI、Rust全依存、生成アプリ独自コードを統合した法的third-party noticesは**未作成・未承認**。Kouga本体ライセンス本文と著作権者、0.xサポート期間/EOLもユーザー回答待ちで、ここでは推定しない。

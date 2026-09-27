@@ -64,6 +64,18 @@ async fn process(
         .deliver(&state.mailer)
         .await
         .map_err(|_| JobError::Retryable("task mail delivery failed"))?;
+    // Debug fixture only: SMTP has acknowledged DATA, but the job has not yet
+    // returned to the queue runner for acknowledgement. Production binaries
+    // contain no externally controllable pause at this boundary.
+    #[cfg(debug_assertions)]
+    if std::env::var("KOUGA_ENV").as_deref() == Ok("test")
+        && let Ok(raw) = std::env::var("TASKBOARD_TEST_PAUSE_AFTER_SMTP_MS")
+    {
+        let millis: u64 = raw
+            .parse()
+            .map_err(|_| JobError::Permanent("invalid test SMTP pause"))?;
+        tokio::time::sleep(Duration::from_millis(millis.min(30_000))).await;
+    }
     opentelemetry::global::meter("taskboard")
         .u64_counter("taskboard.mail.sent")
         .build()
